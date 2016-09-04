@@ -1,0 +1,4 @@
+# ignore latest install file
+pg_cron--?.?.sql
+pg_cron--?.?-*.sql
+!pg_cron--?.?-*--?.?-*.sql

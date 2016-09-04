@@ -1,34 +1,53 @@
-CREATE SCHEMA cron
+CREATE SCHEMA cron;
+GRANT USAGE ON SCHEMA cron TO public;
 
-	CREATE TABLE jobs (
-		job_name text not null,
-		cron_string not null,
-		query text not null,
-		connection_string text not null,
-		PRIMARY KEY (job_name)
-	)
+CREATE SEQUENCE cron.jobid_seq;
+GRANT USAGE ON SEQUENCE cron.jobid_seq TO public;
 
-	CREATE TABLE results (
-		id bigint primary key default nextval('task_id_sequence'),
-		job_name text not null,
-		start_time timestamptz,
-		end_time timestamptz,
-		status int not null,
-		output text
-	)
+CREATE TABLE cron.job (
+	jobid bigint primary key,
+	schedule text not null,
+	command text not null,
+	nodename text not null default 'localhost',
+	nodeport int not null default inet_server_port(),
+	database text not null default current_database(),
+	username text not null default current_user
+);
+GRANT SELECT ON cron.job TO public;
+ALTER TABLE cron.job ENABLE ROW LEVEL SECURITY;
+CREATE POLICY cron_job_policy ON cron.job USING (username = current_user);
 
-	CREATE SEQUENCE task_id_sequence NO CYCLE;
+CREATE TABLE cron.result (
+	runid bigint,
+	jobid bigint not null,
+	starttime timestamptz,
+	endtime timestamptz,
+	status int not null,
+	output text
+);
 
-CREATE FUNCTION cron.schedule(text,text,text,text)
-    RETURNS text
+CREATE FUNCTION cron.schedule(schedule text, command text)
+    RETURNS bigint
     LANGUAGE C STRICT
-    AS 'MODULE_PATHNAME', $$pg_cron_schedule$$;
-COMMENT ON FUNCTION cron.schedule(text,text,text,text)
+    AS 'MODULE_PATHNAME', $$cron_schedule$$;
+COMMENT ON FUNCTION cron.schedule(text,text)
     IS 'schedule a pg_cron job';
 
-CREATE FUNCTION cron.unschedule(text)
-    RETURNS text
+CREATE FUNCTION cron.unschedule(job_id bigint)
+    RETURNS bool
     LANGUAGE C STRICT
-    AS 'MODULE_PATHNAME', $$pg_cron_schedule$$;
-COMMENT ON FUNCTION cron.unschedule(text)
+    AS 'MODULE_PATHNAME', $$cron_unschedule$$;
+COMMENT ON FUNCTION cron.unschedule(bigint)
     IS 'unschedule a pg_cron job';
+
+CREATE FUNCTION cron.job_cache_invalidate()
+    RETURNS trigger
+    LANGUAGE C
+    AS 'MODULE_PATHNAME', $$cron_job_cache_invalidate$$;
+COMMENT ON FUNCTION cron.job_cache_invalidate()
+    IS 'invalidate job cache';
+
+CREATE TRIGGER cron_job_cache_invalidate
+    AFTER INSERT OR UPDATE OR DELETE OR TRUNCATE
+    ON cron.job
+    FOR STATEMENT EXECUTE PROCEDURE cron.job_cache_invalidate();
