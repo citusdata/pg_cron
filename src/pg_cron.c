@@ -1018,12 +1018,10 @@ PollForTasks(List *taskList)
 		PostgresPollingStatusType pollingStatus = task->pollingStatus;
 		struct pollfd *pollFileDescriptor = &pollFDs[taskIndex];
 
-		if (task->state == CRON_TASK_WAITING &&
-			task->pendingRunCount > 0)
+		if ((task->state == CRON_TASK_WAITING && task->pendingRunCount > 0) ||
+			task->state == CRON_TASK_ERROR || task->state == CRON_TASK_DONE)
 		{
-			/*
-			 * We have a task that can start, don't wait.
-			 */
+			/* there is work to be done, don't wait */
 			pfree(pollFDs);
 			return;
 		}
@@ -1087,7 +1085,12 @@ PollForTasks(List *taskList)
 	TimestampDifference(currentTime, nextEventTime, &waitSeconds, &waitMicros);
 
 	pollTimeout = waitSeconds * 1000 + waitMicros / 1000;
-	if (pollTimeout > MaxWait)
+	if (pollTimeout <= 0)
+	{
+		pfree(pollFDs);
+		return;
+	}
+	else if (pollTimeout > MaxWait)
 	{
 		/*
 		 * We never wait more than 1 second, this gives us a chance to react
@@ -1212,7 +1215,7 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 			connectionStatus = PQstatus(connection);
 			if (connectionStatus == CONNECTION_BAD)
 			{
-				task->errorMessage = PQerrorMessage(connection);
+				task->errorMessage = "connection failed";
 				task->pollingStatus = 0;
 				task->state = CRON_TASK_ERROR;
 				break;
@@ -1255,7 +1258,7 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 			connectionStatus = PQstatus(connection);
 			if (connectionStatus == CONNECTION_BAD)
 			{
-				task->errorMessage = PQerrorMessage(connection);
+				task->errorMessage = "connection failed";
 				task->pollingStatus = 0;
 				task->state = CRON_TASK_ERROR;
 				break;
@@ -1278,7 +1281,7 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 			}
 			else if (pollingStatus == PGRES_POLLING_FAILED)
 			{
-				task->errorMessage = PQerrorMessage(connection);
+				task->errorMessage = "connection failed";
 				task->pollingStatus = 0;
 				task->state = CRON_TASK_ERROR;
 			}
@@ -1330,7 +1333,7 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 			connectionStatus = PQstatus(connection);
 			if (connectionStatus == CONNECTION_BAD)
 			{
-				task->errorMessage = PQerrorMessage(connection);
+				task->errorMessage = "connection lost";
 				task->pollingStatus = 0;
 				task->state = CRON_TASK_ERROR;
 				break;
@@ -1372,7 +1375,7 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 			connectionStatus = PQstatus(connection);
 			if (connectionStatus == CONNECTION_BAD)
 			{
-				task->errorMessage = PQerrorMessage(connection);
+				task->errorMessage = "connection lost";
 				task->pollingStatus = 0;
 				task->state = CRON_TASK_ERROR;
 				break;
@@ -1415,6 +1418,9 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 						task->errorMessage = PQresultErrorMessage(result);
 						task->pollingStatus = 0;
 						task->state = CRON_TASK_ERROR;
+
+						PQclear(result);
+
 						return;
 					}
 
@@ -1426,6 +1432,9 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 						task->errorMessage = "COPY not supported";
 						task->pollingStatus = 0;
 						task->state = CRON_TASK_ERROR;
+
+						PQclear(result);
+
 						return;
 					}
 
@@ -1468,7 +1477,7 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 
 			if (task->errorMessage != NULL)
 			{
-				elog(LOG, "error running job %ld: %s", jobId, task->errorMessage);
+				elog(LOG, "pg_cron job %ld: %s", jobId, task->errorMessage);
 			}
 
 			task->startDeadline = 0;
