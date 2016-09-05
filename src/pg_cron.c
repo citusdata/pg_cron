@@ -357,7 +357,6 @@ cron_unschedule(PG_FUNCTION_ARGS)
 	int64 jobId = PG_GETARG_INT64(0);
 
 	Oid cronSchemaId = InvalidOid;
-	Oid cronJobsRelationId = InvalidOid;
 	Oid cronJobIndexId = InvalidOid;
 
 	Relation cronJobsTable = NULL;
@@ -367,9 +366,7 @@ cron_unschedule(PG_FUNCTION_ARGS)
 	bool indexOK = true;
 	HeapTuple heapTuple = NULL;
 
-
 	cronSchemaId = get_namespace_oid(CRON_SCHEMA_NAME, false);
-	cronJobsRelationId = get_relname_relid(JOBS_TABLE_NAME, cronSchemaId);
 	cronJobIndexId = get_relname_relid(JOB_ID_INDEX_NAME, cronSchemaId);
 
 	cronJobsTable = heap_open(CronJobRelationId(), RowExclusiveLock);

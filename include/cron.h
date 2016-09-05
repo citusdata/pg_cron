@@ -319,7 +319,7 @@ time_t	StartTime;
 time_min timeRunning;
 time_min virtualTime;
 time_min clockTime;
-static long GMToff;
+long GMToff;
 
 int	stay_foreground;
 int     lsbsysinit_mode;
