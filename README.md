@@ -53,7 +53,7 @@ sudo PATH=/usr/local/pgsql/bin/:$PATH make install
 
 To start the pg_cron background worker when PostgreSQL starts, you need to add pg_cron to `shared_preload_libraries` in postgresql.conf and restart PostgreSQL. Note that pg_cron does not run any jobs as a long a server is in [hot standby](https://www.postgresql.org/docs/current/static/hot-standby.html) mode, but it automatically starts when the server is promoted.
 
-``
+```
 # add to postgresql.conf:
 shared_preload_libraries = 'pg_cron'
 ```
