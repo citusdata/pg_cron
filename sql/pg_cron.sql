@@ -5,7 +5,7 @@ CREATE SEQUENCE cron.jobid_seq;
 GRANT USAGE ON SEQUENCE cron.jobid_seq TO public;
 
 CREATE TABLE cron.job (
-	jobid bigint primary key,
+	jobid bigint primary key default nextval('cron.jobid_seq'),
 	schedule text not null,
 	command text not null,
 	nodename text not null default 'localhost',
