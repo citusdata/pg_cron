@@ -1168,6 +1168,7 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 				/* remove task as well */
 				bool isPresent = false;
 				hash_search(CronTaskHash, &jobId, HASH_REMOVE, &isPresent);
+				break;
 			}
 
 			/* check whether runs are pending */
