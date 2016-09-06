@@ -17,15 +17,6 @@ GRANT SELECT ON cron.job TO public;
 ALTER TABLE cron.job ENABLE ROW LEVEL SECURITY;
 CREATE POLICY cron_job_policy ON cron.job USING (username = current_user);
 
-CREATE TABLE cron.result (
-	runid bigint,
-	jobid bigint not null,
-	starttime timestamptz,
-	endtime timestamptz,
-	status int not null,
-	output text
-);
-
 CREATE FUNCTION cron.schedule(schedule text, command text)
     RETURNS bigint
     LANGUAGE C STRICT
