@@ -51,22 +51,19 @@ PATH=/usr/local/pgsql/bin/:$PATH make
 sudo PATH=/usr/local/pgsql/bin/:$PATH make install
 ```
 
-After installing pg_cron, you can add it to your database using `CREATE EXTENSION pg_cron`. By default, pg_cron expects its metadata tables to be in the "postgres" database. However, you can configure this using the `cron.database_name` configuration parameter.
+To start the pg_cron background worker when PostgreSQL starts, you need to add pg_cron to `shared_preload_libraries` in postgresql.conf and restart PostgreSQL. Note that pg_cron does not run any jobs as a long a server is in [hot standby](https://www.postgresql.org/docs/current/static/hot-standby.html) mode, but it automatically starts when the server is promoted.
+
+``
+# add to postgresql.conf:
+shared_preload_libraries = 'pg_cron'
+```
+
+After restarting PostgreSQL, you can create the pg_cron functions and metadata tables using `CREATE EXTENSION pg_cron`. By default, the pg_cron background worker expects its metadata tables to be created in the "postgres" database. However, you can configure this by setting the `cron.database_name` configuration parameter in postgresql.conf.
 
 ```sql
 -- run using psql:
 CREATE EXTENSION pg_cron;
 ```
- 
-To start the pg_cron background worker when PostgreSQL starts, add it to shared_preload_libraries in postgresql.conf and restart PostgreSQL:
-
-```
-# add to postgresql.conf:
-shared_preload_libraries = 'pg_cron'
-cron.database_name = 'postgres'
-```
-
-Note that pg_cron does not run any jobs as a long a server is in [hot standby](https://www.postgresql.org/docs/current/static/hot-standby.html) mode, but if pg_cron is in `shared_preload_libraries` then it automatically starts when the server is promoted.
 
 Internally, pg_cron uses libpq to open a new connection to the local database. It may be necessary to enable `trust` authentication for connections coming from localhost in [pg_hba.conf](https://www.postgresql.org/docs/current/static/auth-pg-hba-conf.html). Alternatively, you can create a [.pgpass file](https://www.postgresql.org/docs/current/static/libpq-pgpass.html) in the working directory of the database server.
 
@@ -77,8 +74,8 @@ Since pg_cron uses libpq, you can also run periodic jobs on other machines. This
 If you are superuser, then you can manually modify the cron.job table and use custom values for nodename and nodeport to connect to a different machine:
 
 ```sql
-INSERT INTO cron.job (schedule, command, nodename, nodeport, username) 
-VALUES ('0 4 * * *', 'VACUUM', 'worker-node-1', 5432, 'marco');
+INSERT INTO cron.job (schedule, command, nodename, nodeport, database, username)
+VALUES ('0 4 * * *', 'VACUUM', 'worker-node-1', 5432, 'postgres', 'marco');
 ```
 
 You can use [.pgpass](https://www.postgresql.org/docs/current/static/libpq-pgpass.html) to allow pg_cron to authenticate with the remote server.
