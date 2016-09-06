@@ -364,7 +364,13 @@ cron_unschedule(PG_FUNCTION_ARGS)
 	ScanKeyData scanKey[1];
 	int scanKeyCount = 1;
 	bool indexOK = true;
+	TupleDesc tupleDescriptor = NULL;
 	HeapTuple heapTuple = NULL;
+	bool isNull = false;
+	Oid userId = InvalidOid;
+	char *userName = NULL;
+	Datum ownerNameDatum = 0;
+	char *ownerName = NULL;
 
 	cronSchemaId = get_namespace_oid(CRON_SCHEMA_NAME, false);
 	cronJobIndexId = get_relname_relid(JOB_ID_INDEX_NAME, cronSchemaId);
@@ -378,11 +384,32 @@ cron_unschedule(PG_FUNCTION_ARGS)
 										cronJobIndexId, indexOK,
 										NULL, scanKeyCount, scanKey);
 
+	tupleDescriptor = RelationGetDescr(cronJobsTable);
+
 	heapTuple = systable_getnext(scanDescriptor);
 	if (!HeapTupleIsValid(heapTuple))
 	{
 		ereport(ERROR, (errmsg("could not find valid entry for job "
 							   UINT64_FORMAT, jobId)));
+	}
+
+	/* check if the current user owns the row */
+	userId = GetUserId();
+	userName = GetUserNameFromId(userId, false);
+
+	ownerNameDatum = heap_getattr(heapTuple, Anum_cron_job_username,
+								  tupleDescriptor, &isNull);
+	ownerName = TextDatumGetCString(ownerNameDatum);
+	if (pg_strcasecmp(userName, ownerName) != 0)
+	{
+		/* otherwise, allow if the user has DELETE permission */
+		AclResult aclResult = pg_class_aclcheck(CronJobRelationId(), GetUserId(),
+												ACL_DELETE);
+		if (aclResult != ACLCHECK_OK)
+		{
+			aclcheck_error(aclResult, ACL_KIND_CLASS,
+						   get_rel_name(CronJobRelationId()));
+		}
 	}
 
 	simple_heap_delete(cronJobsTable, &heapTuple->t_self);
