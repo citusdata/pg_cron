@@ -1,6 +1,10 @@
-# pg_cron
+[![Citus Banner](/github-banner.png)](https://www.citusdata.com/)
 
-pg_cron is a simple periodic job scheduler for PostgreSQL based on cron. It uses the same syntax as regular cron, but allows you to run PostgreSQL commands directly from the database:
+[![Slack Status](http://slack.citusdata.com/badge.svg)](https://slack.citusdata.com)
+
+## What is pg_cron?
+
+pg_cron is a simple cron-based job scheduler for PostgreSQL runs inside the database. It uses the same syntax and much of the same code as regular cron, but it allows you to schedule PostgreSQL commands directly from the database:
 
 ```sql
 -- Delete old data on Saturday at 3:30am (GMT)
@@ -40,7 +44,7 @@ The schedule uses the standard cron syntax, in which * means "run every time per
 
 An easy way to create a cron schedule is: [crontab.guru](http://crontab.guru/).
 
-# Set-up
+## Setting up pg_cron
 
 You can install pg_cron by building it from source:
 
@@ -67,7 +71,7 @@ CREATE EXTENSION pg_cron;
 
 Internally, pg_cron uses libpq to open a new connection to the local database. It may be necessary to enable `trust` authentication for connections coming from localhost in [pg_hba.conf](https://www.postgresql.org/docs/current/static/auth-pg-hba-conf.html). Alternatively, you can create a [.pgpass file](https://www.postgresql.org/docs/current/static/libpq-pgpass.html) in the working directory of the database server.
 
-# Advanced usage
+## Advanced usage
 
 Since pg_cron uses libpq, you can also run periodic jobs on other machines. This can be especially useful when you are using the [Citus extension](https://www.citusdata.com/product) to distribute tables across many PostgreSQL servers and need to run periodic jobs across all of them. 
 
