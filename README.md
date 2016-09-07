@@ -44,6 +44,8 @@ The schedule uses the standard cron syntax, in which * means "run every time per
 
 An easy way to create a cron schedule is: [crontab.guru](http://crontab.guru/).
 
+The code in pg_cron that handles parsing and scheduling comes directly from the cron source code by Paul Vixie (@vixie), hence the same options are supported.
+
 ## Setting up pg_cron
 
 You can install pg_cron by building it from source:
