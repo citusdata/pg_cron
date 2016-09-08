@@ -231,19 +231,8 @@ typedef struct _file_buffer {
 	int			unget_count;
 } file_buffer;
 
-void		set_cron_uid __P((void)),
-		set_cron_cwd __P((void)),
-		load_database __P((cron_db *)),
-		open_logfile __P((void)),
-		sigpipe_func __P((void)),
-		job_add __P((entry *, user *)),
-		do_command __P((entry *, user *)),
-		link_user __P((cron_db *, user *)),
-		unlink_user __P((cron_db *, user *)),
-		free_user __P((user *)),
-		unget_char __P((int, FILE *)),
+void	unget_char __P((int, FILE *)),
 		free_entry __P((entry *)),
-		acquire_daemonlock __P((int)),
 		skip_comments __P((FILE *)),
 		log_it __P((char *, int, char *, char *)),
 		log_close __P((void)),
