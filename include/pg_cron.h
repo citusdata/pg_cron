@@ -52,7 +52,7 @@ typedef struct CronTask
 	int64 jobId;
 	int64 runId;
 	CronTaskState state;
-	int pendingRunCount;
+	uint pendingRunCount;
 	PGconn *connection;
 	PostgresPollingStatusType pollingStatus;
 	TimestampTz startDeadline;
