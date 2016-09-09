@@ -118,6 +118,7 @@ static HTAB *CronJobHash = NULL;
 static HTAB *CronTaskHash = NULL;
 static bool CronJobCacheValid = false;
 static Oid CachedCronJobRelationId = InvalidOid;
+static bool RebootJobsScheduled = false;
 static int64 RunCount = 0;
 
 static char *CronTableDatabaseName = "postgres";
@@ -710,6 +711,24 @@ StartAllPendingRuns(List *taskList, TimestampTz currentTime)
 	ListCell *taskCell = NULL;
 	ClockProgress clockProgress;
 
+	if (!RebootJobsScheduled)
+	{
+		/* find jobs with @reboot as a schedule */
+		foreach(taskCell, taskList)
+		{
+			CronTask *task = (CronTask *) lfirst(taskCell);
+			CronJob *cronJob = GetCronJob(task->jobId);
+			entry *schedule = &cronJob->schedule;
+
+			if (schedule->flags & WHEN_REBOOT)
+			{
+				task->pendingRunCount += 1;
+			}
+		}
+
+		RebootJobsScheduled = true;
+	}
+
 	if (lastMinute == 0)
 	{
 		lastMinute = TimestampMinuteStart(currentTime);
@@ -767,7 +786,6 @@ StartAllPendingRuns(List *taskList, TimestampTz currentTime)
 		lastMinute = TimestampMinuteStart(currentTime);
 	}
 }
-
 
 
 /*
