@@ -1,3 +1,17 @@
+DO $$
+BEGIN
+   IF current_database() <> current_setting('cron.database_name') THEN
+      RAISE EXCEPTION 'can only create extension in database %',
+                      current_setting('cron.database_name')
+      USING DETAIL = 'Jobs must be scheduled from the database configured in '||
+                     'cron.database_name, since the pg_cron background worker '||
+                     'reads job descriptions from this database.',
+            HINT = format('Add cron.database_name = ''%s'' in postgresql.conf '||
+                          'to use the current database.', current_database());
+   END IF;
+END;
+$$;
+
 CREATE SCHEMA cron;
 GRANT USAGE ON SCHEMA cron TO public;
 
