@@ -1,6 +1,6 @@
 {
     "name": "pg_cron",
-    "abstract": "Periodic background job scheduler for PostgreSQL",
+    "abstract": "Periodic job scheduler for PostgreSQL",
     "description": "Sets up a background worker that periodically runs queries in the background",
     "version": "0.1",
     "maintainer": "\"Marco Slot\" <marco@citusdata.com>",
@@ -26,12 +26,12 @@
     "resources": {
         "homepage": "https://citusdata.com/",
         "bugtracker": {
-            "web": "https://github.com/marcocitus/pg_cron/issues",
+            "web": "https://github.com/citusdata/pg_cron/issues",
             "mailto": "support@citusdata.com"
         },
         "repository": {
-          "url":  "git://github.com/marcocitus/pg_cron.git",
-          "web":  "https://github.com/marcocitus/pg_cron",
+          "url":  "git://github.com/citusdata/pg_cron.git",
+          "web":  "https://github.com/citusdata/pg_cron",
           "type": "git"
         }
     },
@@ -39,7 +39,7 @@
     "generated_by": "\"Marco Slot\" <marco@citusdata.com>",
 
     "tags": [
-        "cluster"
+        "cron", "background worker"
     ],
 
     "meta-spec": {
