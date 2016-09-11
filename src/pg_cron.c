@@ -658,6 +658,9 @@ TupleToCronJob(TupleDesc tupleDescriptor, HeapTuple heapTuple)
 	else
 	{
 		elog(LOG, "invalid pg_cron schedule for job %ld: %s", jobId, job->scheduleText);
+
+		/* a zeroed out schedule never runs */
+		memset(&job->schedule, 0, sizeof(entry));
 	}
 
 	return job;
