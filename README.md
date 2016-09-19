@@ -71,11 +71,11 @@ After restarting PostgreSQL, you can create the pg_cron functions and metadata t
 CREATE EXTENSION pg_cron;
 ```
 
-Internally, pg_cron uses libpq to open a new connection to the local database. It may be necessary to enable `trust` authentication for connections coming from localhost in [pg_hba.conf](https://www.postgresql.org/docs/current/static/auth-pg-hba-conf.html). Alternatively, you can create a [.pgpass file](https://www.postgresql.org/docs/current/static/libpq-pgpass.html) in the working directory of the database server.
+Internally, pg_cron uses libpq to open a new connection to the local database. It may be necessary to enable `trust` authentication for connections coming from localhost in [pg_hba.conf](https://www.postgresql.org/docs/current/static/auth-pg-hba-conf.html) for the user running the cron job. Alternatively, you can add the password to a [.pgpass file](https://www.postgresql.org/docs/current/static/libpq-pgpass.html), which libpq will use when opening a connection.
 
 ## Advanced usage
 
-Since pg_cron uses libpq, you can also run periodic jobs on other machines. This can be especially useful when you are using the [Citus extension](https://www.citusdata.com/product) to distribute tables across many PostgreSQL servers and need to run periodic jobs across all of them. 
+Since pg_cron uses libpq, you can also run periodic jobs on other machines. This can be especially useful when you are using the [Citus extension](https://www.citusdata.com/product) to distribute tables across many PostgreSQL servers and need to run periodic jobs across all of them.
 
 If you are superuser, then you can manually modify the cron.job table and use custom values for nodename and nodeport to connect to a different machine:
 
