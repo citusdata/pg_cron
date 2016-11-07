@@ -13,10 +13,7 @@ END;
 $$;
 
 CREATE SCHEMA cron;
-GRANT USAGE ON SCHEMA cron TO public;
-
 CREATE SEQUENCE cron.jobid_seq;
-GRANT USAGE ON SEQUENCE cron.jobid_seq TO public;
 
 CREATE TABLE cron.job (
 	jobid bigint primary key default nextval('cron.jobid_seq'),

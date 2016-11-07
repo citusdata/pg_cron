@@ -39,6 +39,7 @@
 #include "access/htup_details.h"
 #include "access/xact.h"
 #include "access/xlog.h"
+#include "catalog/pg_extension.h"
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
 #include "commands/dbcommands.h"
@@ -78,6 +79,8 @@ static void pg_cron_sigterm(SIGNAL_ARGS);
 static void pg_cron_sighup(SIGNAL_ARGS);
 static void PgCronWorkerMain(Datum arg);
 
+static int64 NextJobId();
+static Oid CronExtensionOwner(void);
 static void InvalidateJobCacheCallback(Datum argument, Oid relationId);
 static void InvalidateJobCache(void);
 static Oid CronJobRelationId(void);
@@ -286,7 +289,6 @@ cron_schedule(PG_FUNCTION_ARGS)
 
 	int64 jobId = 0;
 	Datum jobIdDatum = 0;
-	Datum jobIdSequenceName = 0;
 
 	Oid cronSchemaId = InvalidOid;
 	Oid cronJobsRelationId = InvalidOid;
@@ -315,9 +317,8 @@ cron_schedule(PG_FUNCTION_ARGS)
 	memset(values, 0, sizeof(values));
 	memset(isNulls, false, sizeof(isNulls));
 
-	jobIdSequenceName = CStringGetTextDatum(JOB_ID_SEQUENCE_NAME);
-	jobIdDatum = DirectFunctionCall1(nextval, jobIdSequenceName);
-	jobId = DatumGetInt64(jobIdDatum);
+	jobId = NextJobId();
+	jobIdDatum = Int64GetDatum(jobId);
 
 	values[Anum_cron_job_jobid - 1] = jobIdDatum;
 	values[Anum_cron_job_schedule - 1] = CStringGetTextDatum(schedule);
@@ -346,6 +347,85 @@ cron_schedule(PG_FUNCTION_ARGS)
 	InvalidateJobCache();
 
 	PG_RETURN_INT64(jobId);
+}
+
+
+/*
+ * NextJobId returns a new, unique job ID using the job ID sequence.
+ */
+static int64
+NextJobId(void)
+{
+	text *sequenceName = NULL;
+	Oid sequenceId = InvalidOid;
+	List *sequenceNameList = NIL;
+	RangeVar *sequenceVar = NULL;
+	Datum sequenceIdDatum = InvalidOid;
+	Oid savedUserId = InvalidOid;
+	int savedSecurityContext = 0;
+	Datum jobIdDatum = 0;
+	int64 jobId = 0;
+	bool failOK = true;
+
+	/* resolve relationId from passed in schema and relation name */
+	sequenceName = cstring_to_text(JOB_ID_SEQUENCE_NAME);
+	sequenceNameList = textToQualifiedNameList(sequenceName);
+	sequenceVar = makeRangeVarFromNameList(sequenceNameList);
+	sequenceId = RangeVarGetRelid(sequenceVar, NoLock, failOK);
+	sequenceIdDatum = ObjectIdGetDatum(sequenceId);
+
+	GetUserIdAndSecContext(&savedUserId, &savedSecurityContext);
+	SetUserIdAndSecContext(CronExtensionOwner(), SECURITY_LOCAL_USERID_CHANGE);
+
+	/* generate new and unique colocation id from sequence */
+	jobIdDatum = DirectFunctionCall1(nextval_oid, sequenceIdDatum);
+
+	SetUserIdAndSecContext(savedUserId, savedSecurityContext);
+
+	jobId = DatumGetUInt32(jobIdDatum);
+
+	return jobId;
+}
+
+
+/*
+ * CronExtensionOwner returns the name of the user that owns the
+ * extension.
+ */
+static Oid
+CronExtensionOwner(void)
+{
+	Relation extensionRelation = NULL;
+	SysScanDesc scanDescriptor;
+	ScanKeyData entry[1];
+	HeapTuple extensionTuple = NULL;
+	Form_pg_extension extensionForm = NULL;
+	Oid extensionOwner = InvalidOid;
+
+	extensionRelation = heap_open(ExtensionRelationId, AccessShareLock);
+
+	ScanKeyInit(&entry[0],
+				Anum_pg_extension_extname,
+				BTEqualStrategyNumber, F_NAMEEQ,
+				CStringGetDatum("pg_cron"));
+
+	scanDescriptor = systable_beginscan(extensionRelation, ExtensionNameIndexId,
+										true, NULL, 1, entry);
+
+	extensionTuple = systable_getnext(scanDescriptor);
+	if (!HeapTupleIsValid(extensionTuple))
+	{
+		ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
+						errmsg("pg_cron extension not loaded")));
+	}
+
+	extensionForm = (Form_pg_extension) GETSTRUCT(extensionTuple);
+	extensionOwner = extensionForm->extowner;
+
+	systable_endscan(scanDescriptor);
+	heap_close(extensionRelation, AccessShareLock);
+
+	return extensionOwner;
 }
 
 
