@@ -19,6 +19,8 @@
  *
  * $Id: cron.h,v 2.10 1994/01/15 20:43:43 vixie Exp $
  *
+ * marco 07nov16 [remove code not needed by pg_cron]
+ * marco 04sep16 [integrate into pg_cron]
  * vix 14nov88 [rest of log is in RCS]
  * vix 14jan87 [0 or 7 can be sunday; thanks, mwm@berkeley]
  * vix 30dec86 [written]
@@ -30,26 +32,12 @@
 #include <sys/param.h>
 
 #include <stdio.h>
-#include <ctype.h>
 #include <bitstring.h>
-#include <pwd.h>
-#include <sys/wait.h>
-
-#include "pathnames.h"
-
 #if SYS_TIME_H
 # include <sys/time.h>
 #else
 # include <time.h>
 #endif
-
-
-#ifdef WITH_SELINUX
-#include <selinux/selinux.h>
-#endif
-
-#define SYSUSERNAME "root"
-
 
 	/* these are really immutable, and are
 	 *   defined for symbolic convenience only
@@ -233,35 +221,12 @@ typedef struct _file_buffer {
 
 void	unget_char __P((int, FILE *)),
 		free_entry __P((entry *)),
-		skip_comments __P((FILE *)),
-		log_it __P((char *, int, char *, char *)),
-		log_close __P((void)),
-		check_orphans __P((cron_db *));
+		skip_comments __P((FILE *));
 
-int		job_runqueue __P((void)),
-		set_debug_flags __P((char *)),
-		get_char __P((FILE *)),
-		get_string __P((char *, int, FILE *, char *)),
-		swap_uids __P((void)),
-		swap_uids_back __P((void)),
-		cron_pclose __P((FILE *)),
-		strcmp_until __P((char *, char *, int)),
-		allowed __P((char *)),
-		strdtb __P((char *));
-
-long            get_gmtoff(time_t *, struct tm *);
-
-char	*arpadate __P((time_t *)),
-		*mkprints __P((unsigned char *, unsigned int)),
-		*first_word __P((char *, char *));
-
-user		*load_user __P((int, struct passwd *, char *, char *, char *)),
-		*find_user __P((cron_db *, char *));
+int		get_char __P((FILE *)),
+		get_string __P((char *, int, FILE *, char *));
 
 entry * parse_cron_entry(char *);
-
-FILE		*cron_popen __P((char *, char *, entry *));
-
 
 				/* in the C tradition, we only create
 				 * variables for the main program, just
@@ -305,16 +270,8 @@ char	*ecodes[] = {
 char	*ProgramName;
 int	LineNumber;
 time_t	StartTime;
-time_min timeRunning;
 time_min virtualTime;
 time_min clockTime;
-long GMToff;
-
-int	stay_foreground;
-int     lsbsysinit_mode;
-int     fqdn_in_subject;
-int     log_level = 1;
-char    cron_default_mail_charset[MAX_ENVSTR] = "";
 
 # if DEBUGGING
 int	DebugFlags;
@@ -328,15 +285,10 @@ extern	char	*copyright[],
 		*MonthNames[],
 		*DowNames[],
 		*ProgramName;
-extern  int     lsbsysinit_mode;
-extern  int     fqdn_in_subject;
-extern  int     log_level;
 extern	int	LineNumber;
 extern	time_t	StartTime;
-extern  time_min timeRunning;
 extern  time_min virtualTime;
 extern  time_min clockTime;
-extern  char     cron_default_mail_charset[MAX_ENVSTR];
 # if DEBUGGING
 extern	int	DebugFlags;
 extern	char	*DebugFlagNames[];

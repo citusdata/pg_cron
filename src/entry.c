@@ -15,7 +15,8 @@
  * Paul Vixie          <paul@vix.com>          uunet!decwrl!vixie!paul
  */
 
-/* vix 26jan87 [RCS'd; rest of log is in RCS file]
+/* marco 04sep16 [integrated into pg_cron]
+ * vix 26jan87 [RCS'd; rest of log is in RCS file]
  * vix 01jan87 [added line-level error recovery]
  * vix 31dec86 [added /step to the from-to range, per bob@acornrc]
  * vix 30dec86 [written]
