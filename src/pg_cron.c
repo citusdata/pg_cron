@@ -27,7 +27,8 @@
 #include "cron.h"
 
 #include "pg_cron.h"
-#include "cron_job.h"
+#include "task_states.h"
+#include "job_metadata.h"
 
 #include "poll.h"
 #include "sys/time.h"
@@ -64,31 +65,25 @@
 #include "tcop/utility.h"
 
 
-#define CRON_SCHEMA_NAME "cron"
-#define JOBS_TABLE_NAME "job"
-#define JOB_ID_INDEX_NAME "job_pkey"
-#define JOB_ID_SEQUENCE_NAME "cron.jobid_seq"
-
-
 PG_MODULE_MAGIC;
 
 
+/* ways in which the clock can change between main loop iterations */
+typedef enum
+{
+	CLOCK_JUMP_BACKWARD = 0,
+	CLOCK_PROGRESSED = 1,
+	CLOCK_JUMP_FORWARD = 2,
+	CLOCK_CHANGE = 3
+} ClockProgress;
+
+
+/* forward declarations */
 void _PG_init(void);
 void _PG_fini(void);
 static void pg_cron_sigterm(SIGNAL_ARGS);
 static void pg_cron_sighup(SIGNAL_ARGS);
 static void PgCronWorkerMain(Datum arg);
-
-static int64 NextJobId();
-static Oid CronExtensionOwner(void);
-static void InvalidateJobCacheCallback(Datum argument, Oid relationId);
-static void InvalidateJobCache(void);
-static Oid CronJobRelationId(void);
-
-static void ReloadCronJobs(void);
-static List * LoadCronJobList(void);
-static CronJob * TupleToCronJob(TupleDesc tupleDescriptor, HeapTuple heapTuple);
-static bool PgCronHasBeenLoaded(void);
 
 static void StartAllPendingRuns(List *taskList, TimestampTz currentTime);
 static void StartPendingRuns(CronTask *task, ClockProgress clockProgress,
@@ -99,41 +94,24 @@ static TimestampTz TimestampMinuteEnd(TimestampTz time);
 static bool ShouldRunTask(entry *schedule, TimestampTz currentMinute,
 						  bool doWild, bool doNonWild);
 
-static List * CurrentTaskList(void);
 static void WaitForCronTasks(List *taskList);
 static void PollForTasks(List *taskList);
 static void ManageCronTasks(List *taskList, TimestampTz currentTime);
 static void ManageCronTask(CronTask *task, TimestampTz currentTime);
 
-static HTAB * CreateCronJobHash(void);
-static HTAB * CreateCronTaskHash(void);
-static CronJob * GetCronJob(int64 jobId);
-static CronTask * GetCronTask(int64 jobId);
-static void InitializeCronTask(CronTask *task, int64 jobId);
 
+/* global settings */
+char *CronTableDatabaseName = "postgres";
+static bool CronLogStatement = true;
 
 /* flags set by signal handlers */
 static volatile sig_atomic_t got_sigterm = false;
 
-static MemoryContext CronJobContext = NULL;
-static MemoryContext CronTaskContext = NULL;
-static HTAB *CronJobHash = NULL;
-static HTAB *CronTaskHash = NULL;
-static bool CronJobCacheValid = false;
-static Oid CachedCronJobRelationId = InvalidOid;
-static bool RebootJobsScheduled = false;
-static int64 RunCount = 0;
-
-static char *CronTableDatabaseName = "postgres";
-static bool CronLogStatement = true;
+/* global variables */
+static int64 RunCount = 0; /* counter for assigning unique run IDs */
 static int CronTaskStartTimeout = 10000; /* maximum connection time */
 static const int MaxWait = 1000; /* maximum time in ms that poll() can block */
-
-
-/* declarations for dynamic loading */
-PG_FUNCTION_INFO_V1(cron_schedule);
-PG_FUNCTION_INFO_V1(cron_unschedule);
-PG_FUNCTION_INFO_V1(cron_job_cache_invalidate);
+static bool RebootJobsScheduled = false;
 
 
 /*
@@ -170,9 +148,6 @@ _PG_init(void)
 		PGC_POSTMASTER,
 		GUC_SUPERUSER_ONLY,
 		NULL, NULL, NULL);
-
-	/* watch for invalidation events */
-	CacheRegisterRelcacheCallback(InvalidateJobCacheCallback, (Datum) 0);
 
 	/* set up common data for all our workers */
 	worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
@@ -231,26 +206,14 @@ PgCronWorkerMain(Datum arg)
 	/* Connect to our database */
 	BackgroundWorkerInitializeConnection(CronTableDatabaseName, NULL);
 
-	CronJobContext = AllocSetContextCreate(CurrentMemoryContext,
-										   "pg_cron job context",
-										   ALLOCSET_DEFAULT_MINSIZE,
-										   ALLOCSET_DEFAULT_INITSIZE,
-										   ALLOCSET_DEFAULT_MAXSIZE);
-
-	CronTaskContext = AllocSetContextCreate(CurrentMemoryContext,
-											"pg_cron task context",
-											ALLOCSET_DEFAULT_MINSIZE,
-											ALLOCSET_DEFAULT_INITSIZE,
-											ALLOCSET_DEFAULT_MAXSIZE);
-
 	CronLoopContext = AllocSetContextCreate(CurrentMemoryContext,
 											"pg_cron loop context",
 											ALLOCSET_DEFAULT_MINSIZE,
 											ALLOCSET_DEFAULT_INITSIZE,
 											ALLOCSET_DEFAULT_MAXSIZE);
 
-	CronJobHash = CreateCronJobHash();
-	CronTaskHash = CreateCronTaskHash();
+	InitializeJobMetadataCache();
+	InitializeTaskStateHash();
 
 	ereport(LOG, (errmsg("pg_cron scheduler started")));
 
@@ -265,7 +228,7 @@ PgCronWorkerMain(Datum arg)
 
 		if (!CronJobCacheValid)
 		{
-			ReloadCronJobs();
+			RefreshTaskHash();
 		}
 
 		taskList = CurrentTaskList();
@@ -282,513 +245,6 @@ PgCronWorkerMain(Datum arg)
 	ereport(LOG, (errmsg("pg_cron scheduler shutting down")));
 
 	proc_exit(0);
-}
-
-
-/*
- * cluster_schedule schedules a cron job.
- */
-Datum
-cron_schedule(PG_FUNCTION_ARGS)
-{
-	text *scheduleText = PG_GETARG_TEXT_P(0);
-	text *commandText = PG_GETARG_TEXT_P(1);
-
-	char *schedule = text_to_cstring(scheduleText);
-	char *command = text_to_cstring(commandText);
-	entry *parsedSchedule = NULL;
-
-	int64 jobId = 0;
-	Datum jobIdDatum = 0;
-
-	Oid cronSchemaId = InvalidOid;
-	Oid cronJobsRelationId = InvalidOid;
-
-	Relation cronJobsTable = NULL;
-	TupleDesc tupleDescriptor = NULL;
-	HeapTuple heapTuple = NULL;
-	Datum values[Natts_cron_job];
-	bool isNulls[Natts_cron_job];
-
-	Oid userId = GetUserId();
-	char *userName = GetUserNameFromId(userId, false);
-
-	parsedSchedule = parse_cron_entry(schedule);
-	if (parsedSchedule == NULL)
-	{
-		free_entry(parsedSchedule);
-
-		ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-						errmsg("invalid schedule: %s", schedule)));
-	}
-
-	free_entry(parsedSchedule);
-
-	/* form new job tuple */
-	memset(values, 0, sizeof(values));
-	memset(isNulls, false, sizeof(isNulls));
-
-	jobId = NextJobId();
-	jobIdDatum = Int64GetDatum(jobId);
-
-	values[Anum_cron_job_jobid - 1] = jobIdDatum;
-	values[Anum_cron_job_schedule - 1] = CStringGetTextDatum(schedule);
-	values[Anum_cron_job_command - 1] = CStringGetTextDatum(command);
-	values[Anum_cron_job_nodename - 1] = CStringGetTextDatum("localhost");
-	values[Anum_cron_job_nodeport - 1] = Int32GetDatum(PostPortNumber);
-	values[Anum_cron_job_database - 1] = CStringGetTextDatum(CronTableDatabaseName);
-	values[Anum_cron_job_username - 1] = CStringGetTextDatum(userName);
-
-	cronSchemaId = get_namespace_oid(CRON_SCHEMA_NAME, false);
-	cronJobsRelationId = get_relname_relid(JOBS_TABLE_NAME, cronSchemaId);
-
-	/* open jobs relation and insert new tuple */
-	cronJobsTable = heap_open(cronJobsRelationId, RowExclusiveLock);
-
-	tupleDescriptor = RelationGetDescr(cronJobsTable);
-	heapTuple = heap_form_tuple(tupleDescriptor, values, isNulls);
-
-	simple_heap_insert(cronJobsTable, heapTuple);
-	CatalogUpdateIndexes(cronJobsTable, heapTuple);
-	CommandCounterIncrement();
-
-	/* close relation and invalidate previous cache entry */
-	heap_close(cronJobsTable, RowExclusiveLock);
-
-	InvalidateJobCache();
-
-	PG_RETURN_INT64(jobId);
-}
-
-
-/*
- * NextJobId returns a new, unique job ID using the job ID sequence.
- */
-static int64
-NextJobId(void)
-{
-	text *sequenceName = NULL;
-	Oid sequenceId = InvalidOid;
-	List *sequenceNameList = NIL;
-	RangeVar *sequenceVar = NULL;
-	Datum sequenceIdDatum = InvalidOid;
-	Oid savedUserId = InvalidOid;
-	int savedSecurityContext = 0;
-	Datum jobIdDatum = 0;
-	int64 jobId = 0;
-	bool failOK = true;
-
-	/* resolve relationId from passed in schema and relation name */
-	sequenceName = cstring_to_text(JOB_ID_SEQUENCE_NAME);
-	sequenceNameList = textToQualifiedNameList(sequenceName);
-	sequenceVar = makeRangeVarFromNameList(sequenceNameList);
-	sequenceId = RangeVarGetRelid(sequenceVar, NoLock, failOK);
-	sequenceIdDatum = ObjectIdGetDatum(sequenceId);
-
-	GetUserIdAndSecContext(&savedUserId, &savedSecurityContext);
-	SetUserIdAndSecContext(CronExtensionOwner(), SECURITY_LOCAL_USERID_CHANGE);
-
-	/* generate new and unique colocation id from sequence */
-	jobIdDatum = DirectFunctionCall1(nextval_oid, sequenceIdDatum);
-
-	SetUserIdAndSecContext(savedUserId, savedSecurityContext);
-
-	jobId = DatumGetUInt32(jobIdDatum);
-
-	return jobId;
-}
-
-
-/*
- * CronExtensionOwner returns the name of the user that owns the
- * extension.
- */
-static Oid
-CronExtensionOwner(void)
-{
-	Relation extensionRelation = NULL;
-	SysScanDesc scanDescriptor;
-	ScanKeyData entry[1];
-	HeapTuple extensionTuple = NULL;
-	Form_pg_extension extensionForm = NULL;
-	Oid extensionOwner = InvalidOid;
-
-	extensionRelation = heap_open(ExtensionRelationId, AccessShareLock);
-
-	ScanKeyInit(&entry[0],
-				Anum_pg_extension_extname,
-				BTEqualStrategyNumber, F_NAMEEQ,
-				CStringGetDatum("pg_cron"));
-
-	scanDescriptor = systable_beginscan(extensionRelation, ExtensionNameIndexId,
-										true, NULL, 1, entry);
-
-	extensionTuple = systable_getnext(scanDescriptor);
-	if (!HeapTupleIsValid(extensionTuple))
-	{
-		ereport(ERROR, (errcode(ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE),
-						errmsg("pg_cron extension not loaded")));
-	}
-
-	extensionForm = (Form_pg_extension) GETSTRUCT(extensionTuple);
-	extensionOwner = extensionForm->extowner;
-
-	systable_endscan(scanDescriptor);
-	heap_close(extensionRelation, AccessShareLock);
-
-	return extensionOwner;
-}
-
-
-/*
- * cluster_unschedule removes a cron job.
- */
-Datum
-cron_unschedule(PG_FUNCTION_ARGS)
-{
-	int64 jobId = PG_GETARG_INT64(0);
-
-	Oid cronSchemaId = InvalidOid;
-	Oid cronJobIndexId = InvalidOid;
-
-	Relation cronJobsTable = NULL;
-	SysScanDesc scanDescriptor = NULL;
-	ScanKeyData scanKey[1];
-	int scanKeyCount = 1;
-	bool indexOK = true;
-	TupleDesc tupleDescriptor = NULL;
-	HeapTuple heapTuple = NULL;
-	bool isNull = false;
-	Oid userId = InvalidOid;
-	char *userName = NULL;
-	Datum ownerNameDatum = 0;
-	char *ownerName = NULL;
-
-	cronSchemaId = get_namespace_oid(CRON_SCHEMA_NAME, false);
-	cronJobIndexId = get_relname_relid(JOB_ID_INDEX_NAME, cronSchemaId);
-
-	cronJobsTable = heap_open(CronJobRelationId(), RowExclusiveLock);
-
-	ScanKeyInit(&scanKey[0], Anum_cron_job_jobid,
-				BTEqualStrategyNumber, F_INT8EQ, Int64GetDatum(jobId));
-
-	scanDescriptor = systable_beginscan(cronJobsTable,
-										cronJobIndexId, indexOK,
-										NULL, scanKeyCount, scanKey);
-
-	tupleDescriptor = RelationGetDescr(cronJobsTable);
-
-	heapTuple = systable_getnext(scanDescriptor);
-	if (!HeapTupleIsValid(heapTuple))
-	{
-		ereport(ERROR, (errmsg("could not find valid entry for job "
-							   UINT64_FORMAT, jobId)));
-	}
-
-	/* check if the current user owns the row */
-	userId = GetUserId();
-	userName = GetUserNameFromId(userId, false);
-
-	ownerNameDatum = heap_getattr(heapTuple, Anum_cron_job_username,
-								  tupleDescriptor, &isNull);
-	ownerName = TextDatumGetCString(ownerNameDatum);
-	if (pg_strcasecmp(userName, ownerName) != 0)
-	{
-		/* otherwise, allow if the user has DELETE permission */
-		AclResult aclResult = pg_class_aclcheck(CronJobRelationId(), GetUserId(),
-												ACL_DELETE);
-		if (aclResult != ACLCHECK_OK)
-		{
-			aclcheck_error(aclResult, ACL_KIND_CLASS,
-						   get_rel_name(CronJobRelationId()));
-		}
-	}
-
-	simple_heap_delete(cronJobsTable, &heapTuple->t_self);
-	CommandCounterIncrement();
-
-	systable_endscan(scanDescriptor);
-	heap_close(cronJobsTable, RowExclusiveLock);
-
-	InvalidateJobCache();
-
-	PG_RETURN_BOOL(true);
-}
-
-
-/*
- * cron_job_cache_invalidate invalidates the job cache in response to
- * a trigger.
- */
-Datum
-cron_job_cache_invalidate(PG_FUNCTION_ARGS)
-{
-	if (!CALLED_AS_TRIGGER(fcinfo))
-	{
-		ereport(ERROR, (errcode(ERRCODE_E_R_I_E_TRIGGER_PROTOCOL_VIOLATED),
-						errmsg("must be called as trigger")));
-	}
-
-	InvalidateJobCache();
-
-	PG_RETURN_DATUM(PointerGetDatum(NULL));
-}
-
-
-/*
- * Invalidate job cache ensures the job cache is reloaded on the next
- * iteration of pg_cron.
- */
-static void
-InvalidateJobCache(void)
-{
-	HeapTuple classTuple = NULL;
-
-	classTuple = SearchSysCache1(RELOID, ObjectIdGetDatum(CronJobRelationId()));
-	if (HeapTupleIsValid(classTuple))
-	{
-		CacheInvalidateRelcacheByTuple(classTuple);
-		ReleaseSysCache(classTuple);
-	}
-}
-
-
-/*
- * InvalidateJobCacheCallback invalidates the job cache in response to
- * an invalidation event.
- */
-static void
-InvalidateJobCacheCallback(Datum argument, Oid relationId)
-{
-	if (relationId == CachedCronJobRelationId ||
-		CachedCronJobRelationId == InvalidOid)
-	{
-		CronJobCacheValid = false;
-		CachedCronJobRelationId = InvalidOid;
-	}
-}
-
-
-/*
- * CachedCronJobRelationId returns a cached oid of the cron.job relation.
- */
-static Oid
-CronJobRelationId(void)
-{
-	if (CachedCronJobRelationId == InvalidOid)
-	{
-		Oid cronSchemaId = get_namespace_oid(CRON_SCHEMA_NAME, false);
-
-		CachedCronJobRelationId = get_relname_relid(JOBS_TABLE_NAME, cronSchemaId);
-	}
-
-	return CachedCronJobRelationId;
-}
-
-
-/*
- * ReloadCronJobs reloads the cron jobs from the cron.job table.
- * If a job that has an active task has been removed, the task
- * is marked as inactive by this function.
- */
-static void
-ReloadCronJobs(void)
-{
-	List *jobList = NIL;
-	ListCell *jobCell = NULL;
-	CronTask *task = NULL;
-	HASH_SEQ_STATUS status;
-
-	/* destroy old job hash */
-	MemoryContextResetAndDeleteChildren(CronJobContext);
-
-	CronJobHash = CreateCronJobHash();
-
-	hash_seq_init(&status, CronTaskHash);
-
-	/* mark all tasks as inactive */
-	while ((task = hash_seq_search(&status)) != NULL)
-	{
-		task->isActive = false;
-	}
-
-	jobList = LoadCronJobList();
-
-	/* mark tasks that still have a job as active */
-	foreach(jobCell, jobList)
-	{
-		CronJob *job = (CronJob *) lfirst(jobCell);
-
-		CronTask *task = GetCronTask(job->jobId);
-		task->isActive = true;
-	}
-
-	CronJobCacheValid = true;
-}
-
-
-/*
- * LoadCronJobList loads the current list of jobs from the
- * cron.job table and adds each job to the CronJobHash.
- */
-static List *
-LoadCronJobList(void)
-{
-	List *jobList = NIL;
-
-	Relation cronJobTable = NULL;
-
-	SysScanDesc scanDescriptor = NULL;
-	ScanKeyData scanKey[1];
-	int scanKeyCount = 0;
-	HeapTuple heapTuple = NULL;
-	TupleDesc tupleDescriptor = NULL;
-
-	SetCurrentStatementStartTimestamp();
-	StartTransactionCommand();
-	PushActiveSnapshot(GetTransactionSnapshot());
-
-	/*
-	 * If the pg_cron extension has not been created yet or
-	 * we are on a hot standby, the job table is treated as
-	 * being empty.
-	 */
-	if (!PgCronHasBeenLoaded() || RecoveryInProgress())
-	{
-		PopActiveSnapshot();
-		CommitTransactionCommand();
-		pgstat_report_activity(STATE_IDLE, NULL);
-
-		return NIL;
-	}
-
-	cronJobTable = heap_open(CronJobRelationId(), AccessShareLock);
-
-	scanDescriptor = systable_beginscan(cronJobTable,
-										InvalidOid, false,
-										NULL, scanKeyCount, scanKey);
-
-	tupleDescriptor = RelationGetDescr(cronJobTable);
-
-	heapTuple = systable_getnext(scanDescriptor);
-	while (HeapTupleIsValid(heapTuple))
-	{
-		MemoryContext oldContext = NULL;
-		CronJob *job = NULL;
-
-		oldContext = MemoryContextSwitchTo(CronJobContext);
-
-		job = TupleToCronJob(tupleDescriptor, heapTuple);
-		jobList = lappend(jobList, job);
-
-		MemoryContextSwitchTo(oldContext);
-
-		heapTuple = systable_getnext(scanDescriptor);
-	}
-
-	systable_endscan(scanDescriptor);
-	heap_close(cronJobTable, AccessShareLock);
-
-	PopActiveSnapshot();
-	CommitTransactionCommand();
-	pgstat_report_activity(STATE_IDLE, NULL);
-
-	return jobList;
-}
-
-
-/*
- * TupleToCronJob takes a heap tuple and converts it into a CronJob
- * struct.
- */
-static CronJob *
-TupleToCronJob(TupleDesc tupleDescriptor, HeapTuple heapTuple)
-{
-	CronJob *job = NULL;
-	int64 jobKey = 0;
-	bool isNull = false;
-	bool isPresent = false;
-	entry *parsedSchedule = NULL;
-
-	Datum jobId = heap_getattr(heapTuple, Anum_cron_job_jobid,
-							   tupleDescriptor, &isNull);
-	Datum schedule = heap_getattr(heapTuple, Anum_cron_job_schedule,
-								  tupleDescriptor, &isNull);
-	Datum command = heap_getattr(heapTuple, Anum_cron_job_command,
-								 tupleDescriptor, &isNull);
-	Datum nodeName = heap_getattr(heapTuple, Anum_cron_job_nodename,
-								  tupleDescriptor, &isNull);
-	Datum nodePort = heap_getattr(heapTuple, Anum_cron_job_nodeport,
-								  tupleDescriptor, &isNull);
-	Datum database = heap_getattr(heapTuple, Anum_cron_job_database,
-								  tupleDescriptor, &isNull);
-	Datum userName = heap_getattr(heapTuple, Anum_cron_job_username,
-								  tupleDescriptor, &isNull);
-
-	Assert(!HeapTupleHasNulls(heapTuple));
-
-	jobKey = DatumGetUInt32(jobId);
-	job = hash_search(CronJobHash, &jobKey, HASH_ENTER, &isPresent);
-
-	job->jobId = DatumGetUInt32(jobId);
-	job->scheduleText = TextDatumGetCString(schedule);
-	job->command = TextDatumGetCString(command);
-	job->nodeName = TextDatumGetCString(nodeName);
-	job->nodePort = DatumGetUInt32(nodePort);
-	job->userName = TextDatumGetCString(userName);
-	job->database = TextDatumGetCString(database);
-
-	parsedSchedule = parse_cron_entry(job->scheduleText);
-	if (parsedSchedule != NULL)
-	{
-		/* copy the schedule and free the allocated memory immediately */
-
-		job->schedule = *parsedSchedule;
-		free_entry(parsedSchedule);
-	}
-	else
-	{
-		ereport(LOG, (errmsg("invalid pg_cron schedule for job %ld: %s",
-							 jobId, job->scheduleText)));
-
-		/* a zeroed out schedule never runs */
-		memset(&job->schedule, 0, sizeof(entry));
-	}
-
-	return job;
-}
-
-
-/*
- * PgCronHasBeenLoaded returns true if the pg_cron extension has been created
- * in the current database and the extension script has been executed. Otherwise,
- * it returns false. The result is cached as this is called very frequently.
- */
-static bool
-PgCronHasBeenLoaded(void)
-{
-	bool extensionLoaded = false;
-	bool extensionPresent = false;
-	bool extensionScriptExecuted = true;
-
-	Oid extensionOid = get_extension_oid("pg_cron", true);
-	if (extensionOid != InvalidOid)
-	{
-		extensionPresent = true;
-	}
-
-	if (extensionPresent)
-	{
-		/* check if PgCron extension objects are still being created */
-		if (creating_extension && CurrentExtensionObject == extensionOid)
-		{
-			extensionScriptExecuted = false;
-		}
-	}
-
-	extensionLoaded = extensionPresent && extensionScriptExecuted;
-
-	return extensionLoaded;
 }
 
 
@@ -1082,28 +538,6 @@ ShouldRunTask(entry *schedule, TimestampTz currentTime, bool doWild,
 
 
 /*
- * CurrentTaskList extracts the current list of tasks from the
- * cron task hash.
- */
-static List *
-CurrentTaskList(void)
-{
-	List *taskList = NIL;
-	CronTask *task = NULL;
-	HASH_SEQ_STATUS status;
-
-	hash_seq_init(&status, CronTaskHash);
-
-	while ((task = hash_seq_search(&status)) != NULL)
-	{
-		taskList = lappend(taskList, task);
-	}
-
-	return taskList;
-}
-
-
-/*
  * WaitForCronTasks blocks waiting for any active task for at most
  * 1 second.
  */
@@ -1306,8 +740,7 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 			if (!task->isActive)
 			{
 				/* remove task as well */
-				bool isPresent = false;
-				hash_search(CronTaskHash, &jobId, HASH_REMOVE, &isPresent);
+				RemoveTask(jobId);
 				break;
 			}
 
@@ -1620,8 +1053,7 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 
 			if (!task->isActive)
 			{
-				bool isPresent = false;
-				hash_search(CronTaskHash, &jobId, HASH_REMOVE, &isPresent);
+				RemoveTask(jobId);
 			}
 
 			if (task->errorMessage != NULL)
@@ -1644,99 +1076,4 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 		}
 
 	}
-}
-
-
-static HTAB *
-CreateCronJobHash(void)
-{
-	HTAB *taskHash = NULL;
-	HASHCTL info;
-	int hashFlags = 0;
-
-	memset(&info, 0, sizeof(info));
-	info.keysize = sizeof(int64);
-	info.entrysize = sizeof(CronJob);
-	info.hash = tag_hash;
-	info.hcxt = CronJobContext;
-	hashFlags = (HASH_ELEM | HASH_FUNCTION | HASH_CONTEXT);
-
-	taskHash = hash_create("pg_cron jobs", 32, &info, hashFlags);
-
-	return taskHash;
-}
-
-
-static HTAB *
-CreateCronTaskHash(void)
-{
-	HTAB *taskHash = NULL;
-	HASHCTL info;
-	int hashFlags = 0;
-
-	memset(&info, 0, sizeof(info));
-	info.keysize = sizeof(int64);
-	info.entrysize = sizeof(CronTask);
-	info.hash = tag_hash;
-	info.hcxt = CronTaskContext;
-	hashFlags = (HASH_ELEM | HASH_FUNCTION | HASH_CONTEXT);
-
-	taskHash = hash_create("pg_cron tasks", 32, &info, hashFlags);
-
-	return taskHash;
-}
-
-
-/*
- * GetCronTask gets the current task with the given job ID.
- */
-static CronTask *
-GetCronTask(int64 jobId)
-{
-	CronTask *task = NULL;
-	int64 hashKey = jobId;
-	bool isPresent = false;
-
-	task = hash_search(CronTaskHash, &hashKey, HASH_ENTER, &isPresent);
-	if (!isPresent)
-	{
-		InitializeCronTask(task, jobId);
-	}
-
-	return task;
-}
-
-
-/*
- * InitializeCronTask intializes a CronTask struct.
- */
-static void
-InitializeCronTask(CronTask *task, int64 jobId)
-{
-	task->runId = 0;
-	task->jobId = jobId;
-	task->state = CRON_TASK_WAITING;
-	task->pendingRunCount = 0;
-	task->connection = NULL;
-	task->pollingStatus = 0;
-	task->startDeadline = 0;
-	task->isSocketReady = false;
-	task->isActive = true;
-	task->errorMessage = NULL;
-}
-
-
-/*
- * GetCronJob gets the cron job with the given id.
- */
-static CronJob *
-GetCronJob(int64 jobId)
-{
-	CronJob *job = NULL;
-	int64 hashKey = jobId;
-	bool isPresent = false;
-
-	job = hash_search(CronJobHash, &hashKey, HASH_FIND, &isPresent);
-
-	return job;
 }

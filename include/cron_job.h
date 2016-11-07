@@ -11,6 +11,7 @@
 #ifndef CRON_JOB_H
 #define CRON_JOB_H
 
+
 /* ----------------
  *		cron_job definition.
  * ----------------
@@ -47,5 +48,6 @@ typedef FormData_cron_job *Form_cron_job;
 #define Anum_cron_job_nodeport 5
 #define Anum_cron_job_database 6
 #define Anum_cron_job_username 7
+
 
 #endif /* CRON_JOB_H */
