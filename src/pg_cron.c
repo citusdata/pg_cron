@@ -125,6 +125,7 @@ static bool RebootJobsScheduled = false;
 static int64 RunCount = 0;
 
 static char *CronTableDatabaseName = "postgres";
+static bool CronLogStatement = true;
 static int CronTaskStartTimeout = 10000; /* maximum connection time */
 static const int MaxWait = 1000; /* maximum time in ms that poll() can block */
 
@@ -156,6 +157,16 @@ _PG_init(void)
 		NULL,
 		&CronTableDatabaseName,
 		"postgres",
+		PGC_POSTMASTER,
+		GUC_SUPERUSER_ONLY,
+		NULL, NULL, NULL);
+
+	DefineCustomBoolVariable(
+		"cron.log_statement",
+		gettext_noop("Log all cron statements prior to execution."),
+		NULL,
+		&CronLogStatement,
+		true,
 		PGC_POSTMASTER,
 		GUC_SUPERUSER_ONLY,
 		NULL, NULL, NULL);
@@ -241,7 +252,7 @@ PgCronWorkerMain(Datum arg)
 	CronJobHash = CreateCronJobHash();
 	CronTaskHash = CreateCronTaskHash();
 
-	elog(LOG, "pg_cron scheduler started");
+	ereport(LOG, (errmsg("pg_cron scheduler started")));
 
 	MemoryContextSwitchTo(CronLoopContext);
 
@@ -268,7 +279,7 @@ PgCronWorkerMain(Datum arg)
 		MemoryContextReset(CronLoopContext);
 	}
 
-	elog(LOG, "pg_cron scheduler shutting down");
+	ereport(LOG, (errmsg("pg_cron scheduler shutting down")));
 
 	proc_exit(0);
 }
@@ -737,7 +748,8 @@ TupleToCronJob(TupleDesc tupleDescriptor, HeapTuple heapTuple)
 	}
 	else
 	{
-		elog(LOG, "invalid pg_cron schedule for job %ld: %s", jobId, job->scheduleText);
+		ereport(LOG, (errmsg("invalid pg_cron schedule for job %ld: %s",
+							 jobId, job->scheduleText)));
 
 		/* a zeroed out schedule never runs */
 		memset(&job->schedule, 0, sizeof(entry));
@@ -1338,6 +1350,14 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 
 			Assert(sizeof(keywordArray) == sizeof(valueArray));
 
+			if (CronLogStatement)
+			{
+				char *command = cronJob->command;
+
+				ereport(LOG, (errmsg("cron job %ld statement: %s",
+									 jobId, command)));
+			}
+
 			connection = PQconnectStartParams(keywordArray, valueArray, false);
 			PQsetnonblocking(connection, 1);
 
@@ -1606,7 +1626,8 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 
 			if (task->errorMessage != NULL)
 			{
-				elog(LOG, "pg_cron job %ld: %s", jobId, task->errorMessage);
+				ereport(LOG, (errmsg("cron job %ld %s",
+									 jobId, task->errorMessage)));
 			}
 
 			task->startDeadline = 0;
