@@ -787,7 +787,7 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 			{
 				char *command = cronJob->command;
 
-				ereport(LOG, (errmsg("cron job %ld statement: %s",
+				ereport(LOG, (errmsg("cron job %ld starting: %s",
 									 jobId, command)));
 			}
 
@@ -984,13 +984,17 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 
 				switch (executionStatus)
 				{
-					case PGRES_TUPLES_OK:
-					{
-						break;
-					}
-
 					case PGRES_COMMAND_OK:
 					{
+						if (CronLogStatement)
+						{
+							char *cmdStatus = PQcmdStatus(result);
+							char *cmdTuples = PQcmdTuples(result);
+
+							ereport(LOG, (errmsg("cron job %ld completed: %s %s",
+												 jobId, cmdStatus, cmdTuples)));
+						}
+
 						break;
 					}
 
@@ -1020,11 +1024,24 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 						return;
 					}
 
+					case PGRES_TUPLES_OK:
 					case PGRES_EMPTY_QUERY:
 					case PGRES_SINGLE_TUPLE:
 					case PGRES_NONFATAL_ERROR:
 					default:
 					{
+						if (CronLogStatement)
+						{
+							int tupleCount = PQntuples(result);
+							char *rowString = ngettext("row", "rows",
+													   tupleCount);
+
+							ereport(LOG, (errmsg("cron job %ld completed: "
+												 "%d %s",
+												 jobId, tupleCount,
+												 rowString)));
+						}
+
 						break;
 					}
 
@@ -1060,6 +1077,10 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 			{
 				ereport(LOG, (errmsg("cron job %ld %s",
 									 jobId, task->errorMessage)));
+			}
+			else
+			{
+				ereport(LOG, (errmsg("cron job %ld failed", jobId)));
 			}
 
 			task->startDeadline = 0;
