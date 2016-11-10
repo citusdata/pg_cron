@@ -54,7 +54,7 @@
 /* forward declarations */
 static HTAB * CreateCronJobHash(void);
 
-static int64 NextJobId();
+static int64 NextJobId(void);
 static Oid CronExtensionOwner(void);
 static void InvalidateJobCacheCallback(Datum argument, Oid relationId);
 static void InvalidateJobCache(void);
