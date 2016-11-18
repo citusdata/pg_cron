@@ -1,4 +1,4 @@
 comment = 'Job scheduler for PostgreSQL'
-default_version = '0.1'
+default_version = '1.0'
 module_pathname = '$libdir/pg_cron'
-relocatable = true
+relocatable = false
