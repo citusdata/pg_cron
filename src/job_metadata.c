@@ -180,8 +180,6 @@ cron_schedule(PG_FUNCTION_ARGS)
 	parsedSchedule = parse_cron_entry(schedule);
 	if (parsedSchedule == NULL)
 	{
-		free_entry(parsedSchedule);
-
 		ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
 						errmsg("invalid schedule: %s", schedule)));
 	}
