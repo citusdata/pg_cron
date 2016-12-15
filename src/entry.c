@@ -35,10 +35,10 @@ typedef	enum ecode {
 	e_cmd, e_timespec, e_username, e_cmd_len
 } ecode_e;
 
-static char	get_list __P((bitstr_t *, int, int, char *[], int, FILE *)),
-		get_range __P((bitstr_t *, int, int, char *[], int, FILE *)),
-		get_number __P((int *, int, char *[], int, FILE *));
-static int	set_element __P((bitstr_t *, int, int, int));
+static char	get_list(bitstr_t *, int, int, char *[], int, FILE *),
+		get_range(bitstr_t *, int, int, char *[], int, FILE *),
+		get_number(int *, int, char *[], int, FILE *);
+static int	set_element(bitstr_t *, int, int, int);
 
 
 void

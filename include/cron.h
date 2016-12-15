@@ -219,12 +219,12 @@ typedef struct _file_buffer {
 	int			unget_count;
 } file_buffer;
 
-void	unget_char __P((int, FILE *)),
-		free_entry __P((entry *)),
-		skip_comments __P((FILE *));
+void	unget_char(int, FILE *),
+		free_entry(entry *),
+		skip_comments(FILE *);
 
-int		get_char __P((FILE *)),
-		get_string __P((char *, int, FILE *, char *));
+int		get_char(FILE *),
+		get_string(char *, int, FILE *, char *);
 
 entry * parse_cron_entry(char *);
 
