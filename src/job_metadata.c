@@ -27,6 +27,7 @@
 #include "catalog/pg_extension.h"
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
+#include "commands/dbcommands.h"
 #include "commands/extension.h"
 #include "commands/sequence.h"
 #include "commands/trigger.h"
@@ -160,6 +161,7 @@ cron_schedule(PG_FUNCTION_ARGS)
 
 	char *schedule = text_to_cstring(scheduleText);
 	char *command = text_to_cstring(commandText);
+	char *databaseName = NULL;
 	entry *parsedSchedule = NULL;
 
 	int64 jobId = 0;
@@ -193,12 +195,26 @@ cron_schedule(PG_FUNCTION_ARGS)
 	jobId = NextJobId();
 	jobIdDatum = Int64GetDatum(jobId);
 
+	/* check for optional database argument */
+	if (PG_NARGS() > 2)
+	{
+		text *databaseText = PG_GETARG_TEXT_P(2);
+		databaseName = text_to_cstring(databaseText);
+
+		/* fail if the database does not exist */
+		get_database_oid(databaseName, false);
+	}
+	else
+	{
+		databaseName = CronTableDatabaseName;
+	}
+
 	values[Anum_cron_job_jobid - 1] = jobIdDatum;
 	values[Anum_cron_job_schedule - 1] = CStringGetTextDatum(schedule);
 	values[Anum_cron_job_command - 1] = CStringGetTextDatum(command);
 	values[Anum_cron_job_nodename - 1] = CStringGetTextDatum("localhost");
 	values[Anum_cron_job_nodeport - 1] = Int32GetDatum(PostPortNumber);
-	values[Anum_cron_job_database - 1] = CStringGetTextDatum(CronTableDatabaseName);
+	values[Anum_cron_job_database - 1] = CStringGetTextDatum(databaseName);
 	values[Anum_cron_job_username - 1] = CStringGetTextDatum(userName);
 
 	cronSchemaId = get_namespace_oid(CRON_SCHEMA_NAME, false);
