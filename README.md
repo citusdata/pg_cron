@@ -46,18 +46,41 @@ An easy way to create a cron schedule is: [crontab.guru](http://crontab.guru/).
 
 The code in pg_cron that handles parsing and scheduling comes directly from the cron source code by Paul Vixie, hence the same options are supported.
 
-## Setting up pg_cron
+## Installing pg_cron
 
-You can install pg_cron by building it from source:
+Install on Red Hat, CentOS, Fedora, Amazon Linux with PostgreSQL 9.6:
+
+```bash
+# Add Citus Data package repository
+curl https://install.citusdata.com/community/rpm.sh | sudo bash
+
+# Install the pg_cron extension
+sudo yum install -y pg_cron_96
+```
+
+Install on Debian, Ubuntu with PostgreSQL 9.6:
+
+```bash
+# Add Citus Data package repository
+curl https://install.citusdata.com/community/deb.sh | sudo bash
+
+# Install the pg_cron extension
+sudo apt-get -y install postgresql-9.6-pgcron
+```
+
+You can also install pg_cron by building it from source:
 
 ```bash
 git clone https://github.com/citusdata/pg_cron.git
 cd pg_cron
-PATH=/usr/local/pgsql/bin/:$PATH make
-sudo PATH=/usr/local/pgsql/bin/:$PATH make install
+# Ensure pg_config is in your path, e.g.
+export PATH=/usr/pgsql-9.6/bin:$PATH
+make && sudo PATH=$PATH make install
 ```
 
-To start the pg_cron background worker when PostgreSQL starts, you need to add pg_cron to `shared_preload_libraries` in postgresql.conf and restart PostgreSQL. Note that pg_cron does not run any jobs as a long a server is in [hot standby](https://www.postgresql.org/docs/current/static/hot-standby.html) mode, but it automatically starts when the server is promoted.
+## Setting up pg_cron
+
+ To start the pg_cron background worker when PostgreSQL starts, you need to add pg_cron to `shared_preload_libraries` in postgresql.conf and restart PostgreSQL. Note that pg_cron does not run any jobs as a long a server is in [hot standby](https://www.postgresql.org/docs/current/static/hot-standby.html) mode, but it automatically starts when the server is promoted.
 
 ```
 # add to postgresql.conf:
