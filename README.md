@@ -90,17 +90,22 @@ shared_preload_libraries = 'pg_cron'
 After restarting PostgreSQL, you can create the pg_cron functions and metadata tables using `CREATE EXTENSION pg_cron`. By default, the pg_cron background worker expects its metadata tables to be created in the "postgres" database. However, you can configure this by setting the `cron.database_name` configuration parameter in postgresql.conf.
 
 ```sql
--- run using psql:
+-- run as superuser:
 CREATE EXTENSION pg_cron;
+
+-- optionally, grant usage to regular users:
+GRANT USAGE ON SCHEMA cron TO marco;
 ```
 
 Internally, pg_cron uses libpq to open a new connection to the local database. It may be necessary to enable `trust` authentication for connections coming from localhost in [pg_hba.conf](https://www.postgresql.org/docs/current/static/auth-pg-hba-conf.html) for the user running the cron job. Alternatively, you can add the password to a [.pgpass file](https://www.postgresql.org/docs/current/static/libpq-pgpass.html), which libpq will use when opening a connection.
 
+For security, jobs are executed in the same database with the same permissions as the current user. In addition, users are only able to see their own jobs in the `cron.job` table.
+
 ## Advanced usage
 
-Since pg_cron uses libpq, you can also run periodic jobs on other machines. This can be especially useful when you are using the [Citus extension](https://www.citusdata.com/product) to distribute tables across many PostgreSQL servers and need to run periodic jobs across all of them.
+Since pg_cron uses libpq, you can also run periodic jobs on other databases or other machines. This can be especially useful when you are using the [Citus extension](https://www.citusdata.com/product) to distribute tables across many PostgreSQL servers and need to run periodic jobs across all of them.
 
-If you are superuser, then you can manually modify the cron.job table and use custom values for nodename and nodeport to connect to a different machine:
+If you are superuser, then you can manually modify the `cron.job` table and use custom values for nodename and nodeport to connect to a different machine:
 
 ```sql
 INSERT INTO cron.job (schedule, command, nodename, nodeport, database, username)
