@@ -99,7 +99,7 @@ GRANT USAGE ON SCHEMA cron TO marco;
 
 Internally, pg_cron uses libpq to open a new connection to the local database. It may be necessary to enable `trust` authentication for connections coming from localhost in [pg_hba.conf](https://www.postgresql.org/docs/current/static/auth-pg-hba-conf.html) for the user running the cron job. Alternatively, you can add the password to a [.pgpass file](https://www.postgresql.org/docs/current/static/libpq-pgpass.html), which libpq will use when opening a connection.
 
-For security, jobs are executed in the same database with the same permissions as the current user. In addition, users are only able to see their own jobs in the `cron.job` table.
+For security, jobs are executed in the database in which the `cron.schedule` function is called with the same permissions as the current user. In addition, users are only able to see their own jobs in the `cron.job` table.
 
 ## Advanced usage
 
