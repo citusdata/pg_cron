@@ -57,6 +57,7 @@ curl https://install.citusdata.com/community/rpm.sh | sudo bash
 # Install the pg_cron extension
 sudo yum install -y pg_cron_96
 ```
+<!---
 
 Install on Debian, Ubuntu with PostgreSQL 9.6:
 
@@ -67,6 +68,7 @@ curl https://install.citusdata.com/community/deb.sh | sudo bash
 # Install the pg_cron extension
 sudo apt-get -y install postgresql-9.6-pgcron
 ```
+-->
 
 You can also install pg_cron by building it from source:
 
