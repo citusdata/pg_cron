@@ -172,6 +172,11 @@ static void
 pg_cron_sigterm(SIGNAL_ARGS)
 {
 	got_sigterm = true;
+
+	if (MyProc != NULL)
+	{
+		SetLatch(&MyProc->procLatch);
+	}
 }
 
 
@@ -183,6 +188,11 @@ static void
 pg_cron_sighup(SIGNAL_ARGS)
 {
 	CronJobCacheValid = false;
+
+	if (MyProc != NULL)
+	{
+		SetLatch(&MyProc->procLatch);
+	}
 }
 
 
@@ -552,8 +562,19 @@ WaitForCronTasks(List *taskList)
 	}
 	else
 	{
-		/* wait for new jobs */
-		pg_usleep(MaxWait*1000L);
+		int rc = 0;
+		int waitFlags = WL_LATCH_SET | WL_POSTMASTER_DEATH | WL_TIMEOUT;
+
+		/* nothing to do, wait for new jobs */
+		rc = WaitLatch(MyLatch, waitFlags, MaxWait);
+
+		ResetLatch(MyLatch);
+
+		if (rc & WL_POSTMASTER_DEATH)
+		{
+			/* postmaster died and we should bail out immediately */
+			proc_exit(1);
+		}
 	}
 }
 
