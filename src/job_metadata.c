@@ -464,6 +464,7 @@ LoadCronJobList(void)
 	int scanKeyCount = 0;
 	HeapTuple heapTuple = NULL;
 	TupleDesc tupleDescriptor = NULL;
+	MemoryContext originalContext = CurrentMemoryContext;
 
 	SetCurrentStatementStartTimestamp();
 	StartTransactionCommand();
@@ -513,6 +514,8 @@ LoadCronJobList(void)
 	PopActiveSnapshot();
 	CommitTransactionCommand();
 	pgstat_report_activity(STATE_IDLE, NULL);
+
+	MemoryContextSwitchTo(originalContext);
 
 	return jobList;
 }
