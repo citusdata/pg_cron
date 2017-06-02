@@ -8,6 +8,7 @@
  *
  *-------------------------------------------------------------------------
  */
+#include <sys/resource.h>
 
 #include "postgres.h"
 #include "fmgr.h"
@@ -98,7 +99,9 @@ static bool ShouldRunTask(entry *schedule, TimestampTz currentMinute,
 						  bool doWild, bool doNonWild);
 
 static void WaitForCronTasks(List *taskList);
+static void WaitForLatch(int timeoutMs);
 static void PollForTasks(List *taskList);
+static bool CanStartTask(CronTask *task);
 static void ManageCronTasks(List *taskList, TimestampTz currentTime);
 static void ManageCronTask(CronTask *task, TimestampTz currentTime);
 
@@ -115,6 +118,8 @@ static int64 RunCount = 0; /* counter for assigning unique run IDs */
 static int CronTaskStartTimeout = 10000; /* maximum connection time */
 static const int MaxWait = 1000; /* maximum time in ms that poll() can block */
 static bool RebootJobsScheduled = false;
+static int RunningTaskCount = 0;
+static int MaxRunningTasks = 0;
 
 
 /*
@@ -151,6 +156,19 @@ _PG_init(void)
 		PGC_POSTMASTER,
 		GUC_SUPERUSER_ONLY,
 		NULL, NULL, NULL);
+
+	DefineCustomIntVariable(
+		"cron.max_running_jobs",
+		gettext_noop("Maximum number of jobs that can run concurrently."),
+		NULL,
+		&MaxRunningTasks,
+		32,
+		0,
+		MaxConnections,
+		PGC_POSTMASTER,
+		GUC_SUPERUSER_ONLY,
+		NULL, NULL, NULL);
+
 
 	/* set up common data for all our workers */
 	worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
@@ -210,6 +228,7 @@ void
 PgCronWorkerMain(Datum arg)
 {
 	MemoryContext CronLoopContext = NULL;
+	struct rlimit limit;
 
 	/* Establish signal handlers before unblocking signals. */
 	pqsignal(SIGHUP, pg_cron_sighup);
@@ -221,6 +240,28 @@ PgCronWorkerMain(Datum arg)
 
 	/* Connect to our database */
 	BackgroundWorkerInitializeConnection(CronTableDatabaseName, NULL);
+
+	/* Determine how many tasks we can run concurrently */
+	if (MaxConnections < MaxRunningTasks)
+	{
+		MaxRunningTasks = MaxConnections;
+	}
+
+	if (max_files_per_process < MaxRunningTasks)
+	{
+		MaxRunningTasks = max_files_per_process;
+	}
+
+	if (getrlimit(RLIMIT_NOFILE, &limit) != 0 &&
+		limit.rlim_cur < (uint32) MaxRunningTasks)
+	{
+		MaxRunningTasks = limit.rlim_cur;
+	}
+
+	if (MaxRunningTasks <= 0)
+	{
+		MaxRunningTasks = 1;
+	}
 
 	CronLoopContext = AllocSetContextCreate(CurrentMemoryContext,
 											"pg_cron loop context",
@@ -568,23 +609,34 @@ WaitForCronTasks(List *taskList)
 	}
 	else
 	{
-		int rc = 0;
-		int waitFlags = WL_LATCH_SET | WL_POSTMASTER_DEATH | WL_TIMEOUT;
+		WaitForLatch(MaxWait);
+	}
+}
 
-		/* nothing to do, wait for new jobs */
+
+/*
+ * WaitForLatch waits for the given number of milliseconds unless a signal
+ * is received or postmaster shuts down.
+ */
+static void
+WaitForLatch(int timeoutMs)
+{
+	int rc = 0;
+	int waitFlags = WL_LATCH_SET | WL_POSTMASTER_DEATH | WL_TIMEOUT;
+
+	/* nothing to do, wait for new jobs */
 #if (PG_VERSION_NUM >= 100000)
-		rc = WaitLatch(MyLatch, waitFlags, MaxWait, PG_WAIT_EXTENSION);
+	rc = WaitLatch(MyLatch, waitFlags, timeoutMs, PG_WAIT_EXTENSION);
 #else
-		rc = WaitLatch(MyLatch, waitFlags, MaxWait);
+	rc = WaitLatch(MyLatch, waitFlags, timeoutMs);
 #endif
 
-		ResetLatch(MyLatch);
+	ResetLatch(MyLatch);
 
-		if (rc & WL_POSTMASTER_DEATH)
-		{
-			/* postmaster died and we should bail out immediately */
-			proc_exit(1);
-		}
+	if (rc & WL_POSTMASTER_DEATH)
+	{
+		/* postmaster died and we should bail out immediately */
+		proc_exit(1);
 	}
 }
 
@@ -601,13 +653,16 @@ PollForTasks(List *taskList)
 	int pollTimeout = 0;
 	long waitSeconds = 0;
 	int waitMicros = 0;
+	CronTask **polledTasks = NULL;
 	struct pollfd *pollFDs = NULL;
 	int pollResult = 0;
 
 	int taskIndex = 0;
 	int taskCount = list_length(taskList);
+	int activeTaskCount = 0;
 	ListCell *taskCell = NULL;
 
+	polledTasks = (CronTask **) palloc0(taskCount * sizeof(CronTask));
 	pollFDs = (struct pollfd *) palloc0(taskCount * sizeof(struct pollfd));
 
 	currentTime = GetCurrentTimestamp();
@@ -621,14 +676,27 @@ PollForTasks(List *taskList)
 	{
 		CronTask *task = (CronTask *) lfirst(taskCell);
 		PostgresPollingStatusType pollingStatus = task->pollingStatus;
-		struct pollfd *pollFileDescriptor = &pollFDs[taskIndex];
+		struct pollfd *pollFileDescriptor = &pollFDs[activeTaskCount];
 
-		if ((task->state == CRON_TASK_WAITING && task->pendingRunCount > 0) ||
-			task->state == CRON_TASK_ERROR || task->state == CRON_TASK_DONE)
+		if (activeTaskCount >= MaxRunningTasks)
+		{
+			/* already polling the maximum number of tasks */
+			break;
+		}
+
+		if (task->state == CRON_TASK_ERROR || task->state == CRON_TASK_DONE ||
+			CanStartTask(task))
 		{
 			/* there is work to be done, don't wait */
+			pfree(polledTasks);
 			pfree(pollFDs);
 			return;
+		}
+
+		if (task->state == CRON_TASK_WAITING && task->pendingRunCount == 0)
+		{
+			/* don't poll idle tasks */
+			continue;
 		}
 
 		if (task->state == CRON_TASK_CONNECTING ||
@@ -643,6 +711,10 @@ PollForTasks(List *taskList)
 				nextEventTime = task->startDeadline;
 			}
 		}
+
+		/* we plan to poll this task */
+		pollFileDescriptor = &pollFDs[activeTaskCount];
+		polledTasks[activeTaskCount] = task;
 
 		if (task->state == CRON_TASK_CONNECTING ||
 			task->state == CRON_TASK_SENDING ||
@@ -680,7 +752,7 @@ PollForTasks(List *taskList)
 
 		pollFileDescriptor->revents = 0;
 
-		taskIndex++;
+		activeTaskCount++;
 	}
 
 	/*
@@ -692,6 +764,7 @@ PollForTasks(List *taskList)
 	pollTimeout = waitSeconds * 1000 + waitMicros / 1000;
 	if (pollTimeout <= 0)
 	{
+		pfree(polledTasks);
 		pfree(pollFDs);
 		return;
 	}
@@ -705,7 +778,17 @@ PollForTasks(List *taskList)
 		pollTimeout = MaxWait;
 	}
 
-	pollResult = poll(pollFDs, taskCount, pollTimeout);
+	if (activeTaskCount == 0)
+	{
+		/* turns out there's nothing to do, just wait for something to happen */
+		WaitForLatch(pollTimeout);
+
+		pfree(polledTasks);
+		pfree(pollFDs);
+		return;
+	}
+
+	pollResult = poll(pollFDs, activeTaskCount, pollTimeout);
 	if (pollResult < 0)
 	{
 		/*
@@ -713,24 +796,34 @@ PollForTasks(List *taskList)
 		 * probably check errno in case something bad happened.
 		 */
 
+		pfree(polledTasks);
 		pfree(pollFDs);
 		return;
 	}
 
-	taskIndex = 0;
-
-	foreach(taskCell, taskList)
+	for (taskIndex = 0; taskIndex < activeTaskCount; taskIndex++)
 	{
-		CronTask *task = (CronTask *) lfirst(taskCell);
+		CronTask *task = polledTasks[taskIndex];
 		struct pollfd *pollFileDescriptor = &pollFDs[taskIndex];
 
 		task->isSocketReady = pollFileDescriptor->revents &
 							  pollFileDescriptor->events;
-
-		taskIndex++;
 	}
 
+	pfree(polledTasks);
 	pfree(pollFDs);
+}
+
+
+/*
+ * CanStartTask determines whether a task is ready to be started because
+ * it has pending runs and we are running less than MaxRunningTasks.
+ */
+static bool
+CanStartTask(CronTask *task)
+{
+	return task->state == CRON_TASK_WAITING && task->pendingRunCount > 0 &&
+		   RunningTaskCount < MaxRunningTasks;
 }
 
 
@@ -775,8 +868,7 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 				break;
 			}
 
-			/* check whether runs are pending */
-			if (task->pendingRunCount == 0)
+			if (!CanStartTask(task))
 			{
 				break;
 			}
@@ -784,6 +876,8 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 			task->runId = RunCount++;
 			task->pendingRunCount -= 1;
 			task->state = CRON_TASK_START;
+
+			RunningTaskCount++;
 		}
 
 		case CRON_TASK_START:
@@ -1092,6 +1186,8 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 			task->isSocketReady = false;
 			task->state = CRON_TASK_DONE;
 
+			RunningTaskCount--;
+
 			break;
 		}
 
@@ -1126,6 +1222,8 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 			task->startDeadline = 0;
 			task->isSocketReady = false;
 			task->state = CRON_TASK_DONE;
+
+			RunningTaskCount--;
 
 			/* fall through to CRON_TASK_DONE */
 		}
