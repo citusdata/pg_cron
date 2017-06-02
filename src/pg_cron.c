@@ -818,6 +818,9 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 			connectionStatus = PQstatus(connection);
 			if (connectionStatus == CONNECTION_BAD)
 			{
+				/* make sure we call PQfinish on the connection */
+				task->connection = connection;
+
 				task->errorMessage = "connection failed";
 				task->pollingStatus = 0;
 				task->state = CRON_TASK_ERROR;
