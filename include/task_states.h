@@ -41,6 +41,7 @@ typedef struct CronTask
 	bool isSocketReady;
 	bool isActive;
 	char *errorMessage;
+	bool freeErrorMessage;
 } CronTask;
 
 

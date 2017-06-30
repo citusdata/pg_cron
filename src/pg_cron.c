@@ -1025,7 +1025,8 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 					case PGRES_BAD_RESPONSE:
 					case PGRES_FATAL_ERROR:
 					{
-						task->errorMessage = PQresultErrorMessage(result);
+						task->errorMessage = strdup(PQresultErrorMessage(result));
+						task->freeErrorMessage = true;
 						task->pollingStatus = 0;
 						task->state = CRON_TASK_ERROR;
 
@@ -1101,6 +1102,11 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 			{
 				ereport(LOG, (errmsg("cron job %ld %s",
 									 jobId, task->errorMessage)));
+
+				if (task->freeErrorMessage)
+				{
+					free(task->errorMessage);
+				}
 			}
 			else
 			{

@@ -143,6 +143,7 @@ InitializeCronTask(CronTask *task, int64 jobId)
 	task->isSocketReady = false;
 	task->isActive = true;
 	task->errorMessage = NULL;
+	task->freeErrorMessage = false;
 }
 
 
