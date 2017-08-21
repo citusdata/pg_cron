@@ -128,8 +128,8 @@ _PG_init(void)
 	if (!process_shared_preload_libraries_in_progress)
 	{
 		ereport(ERROR, (errmsg("pg_cron can only be loaded via shared_preload_libraries"),
-						errhint("Add pg_cron to shared_preload_libraries configuration "
-								"variable in postgresql.conf in master and workers.")));
+						errhint("Add pg_cron to the shared_preload_libraries "
+								"configuration variable in postgresql.conf.")));
 	}
 
 	DefineCustomStringVariable(
