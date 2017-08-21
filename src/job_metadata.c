@@ -42,6 +42,9 @@
 #include "utils/relcache.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
+#if (PG_VERSION_NUM >= 100000)
+#include "utils/varlena.h"
+#endif
 
 
 #define EXTENSION_NAME "pg_cron"
@@ -210,8 +213,12 @@ cron_schedule(PG_FUNCTION_ARGS)
 	tupleDescriptor = RelationGetDescr(cronJobsTable);
 	heapTuple = heap_form_tuple(tupleDescriptor, values, isNulls);
 
+#if (PG_VERSION_NUM >= 100000)
+	CatalogTupleInsert(cronJobsTable, heapTuple);
+#else
 	simple_heap_insert(cronJobsTable, heapTuple);
 	CatalogUpdateIndexes(cronJobsTable, heapTuple);
+#endif
 	CommandCounterIncrement();
 
 	/* close relation and invalidate previous cache entry */
@@ -367,11 +374,11 @@ cron_unschedule(PG_FUNCTION_ARGS)
 	}
 
 	simple_heap_delete(cronJobsTable, &heapTuple->t_self);
-	CommandCounterIncrement();
 
 	systable_endscan(scanDescriptor);
 	heap_close(cronJobsTable, RowExclusiveLock);
 
+	CommandCounterIncrement();
 	InvalidateJobCache();
 
 	PG_RETURN_BOOL(true);

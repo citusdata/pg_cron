@@ -62,6 +62,9 @@
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
 #include "utils/timestamp.h"
+#if (PG_VERSION_NUM >= 100000)
+#include "utils/varlena.h"
+#endif
 #include "tcop/utility.h"
 
 
@@ -83,7 +86,7 @@ void _PG_init(void);
 void _PG_fini(void);
 static void pg_cron_sigterm(SIGNAL_ARGS);
 static void pg_cron_sighup(SIGNAL_ARGS);
-static void PgCronWorkerMain(Datum arg);
+void PgCronWorkerMain(Datum arg);
 
 static void StartAllPendingRuns(List *taskList, TimestampTz currentTime);
 static void StartPendingRuns(CronTask *task, ClockProgress clockProgress,
@@ -153,10 +156,13 @@ _PG_init(void)
 	worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
 	worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
 	worker.bgw_restart_time = 1;
+#if (PG_VERSION_NUM < 100000)
 	worker.bgw_main = PgCronWorkerMain;
+#endif
 	worker.bgw_main_arg = Int32GetDatum(0);
 	worker.bgw_notify_pid = 0;
 	sprintf(worker.bgw_library_name, "pg_cron");
+	sprintf(worker.bgw_function_name, "PgCronWorkerMain");
 	snprintf(worker.bgw_name, BGW_MAXLEN, "pg_cron_scheduler");
 
 	RegisterBackgroundWorker(&worker);
@@ -200,7 +206,7 @@ pg_cron_sighup(SIGNAL_ARGS)
  * PgCronWorkerMain is the main entry-point for the background worker
  * that performs tasks.
  */
-static void
+void
 PgCronWorkerMain(Datum arg)
 {
 	MemoryContext CronLoopContext = NULL;
@@ -566,7 +572,11 @@ WaitForCronTasks(List *taskList)
 		int waitFlags = WL_LATCH_SET | WL_POSTMASTER_DEATH | WL_TIMEOUT;
 
 		/* nothing to do, wait for new jobs */
+#if (PG_VERSION_NUM >= 100000)
+		rc = WaitLatch(MyLatch, waitFlags, MaxWait, PG_WAIT_EXTENSION);
+#else
 		rc = WaitLatch(MyLatch, waitFlags, MaxWait);
+#endif
 
 		ResetLatch(MyLatch);
 
