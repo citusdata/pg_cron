@@ -217,6 +217,7 @@ cron_schedule(PG_FUNCTION_ARGS)
 	CatalogTupleInsert(cronJobsTable, heapTuple);
 #else
 	simple_heap_insert(cronJobsTable, heapTuple);
+#if (PG_VERSION_NUM < 100000)
 	CatalogUpdateIndexes(cronJobsTable, heapTuple);
 #endif
 	CommandCounterIncrement();
