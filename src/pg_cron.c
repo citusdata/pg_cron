@@ -87,6 +87,7 @@ void _PG_fini(void);
 static void pg_cron_sigterm(SIGNAL_ARGS);
 static void pg_cron_sighup(SIGNAL_ARGS);
 void PgCronWorkerMain(Datum arg);
+static List *DatabaseNameList(void);
 
 static void StartAllPendingRuns(List *taskList, TimestampTz currentTime);
 static void StartPendingRuns(CronTask *task, ClockProgress clockProgress,
@@ -124,6 +125,9 @@ void
 _PG_init(void)
 {
 	BackgroundWorker worker;
+	List *databaseNameList = NIL;
+	ListCell *databaseNameCell = NULL;
+	int databaseId = 0;
 
 	if (!process_shared_preload_libraries_in_progress)
 	{
@@ -134,7 +138,7 @@ _PG_init(void)
 
 	DefineCustomStringVariable(
 		"cron.database_name",
-		gettext_noop("Database in which pg_cron metadata is kept."),
+		gettext_noop("Database names in which cron jobs can be scheduled."),
 		NULL,
 		&CronTableDatabaseName,
 		"postgres",
@@ -154,6 +158,14 @@ _PG_init(void)
 
 	/* set up common data for all our workers */
 	worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
+
+	/*
+	 * We would like the background worker to restart in case of a crash,
+	 * but one reason for crashing could be that the database configured
+	 * in cron.database_name does not exist. Therefore, we shouldn't
+	 * restart very quickly, but also not wait so long that we'll start
+	 * missing jobs.
+	 */
 	worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
 	worker.bgw_restart_time = 1;
 #if (PG_VERSION_NUM < 100000)
@@ -165,7 +177,43 @@ _PG_init(void)
 	sprintf(worker.bgw_function_name, "PgCronWorkerMain");
 	snprintf(worker.bgw_name, BGW_MAXLEN, "pg_cron_scheduler");
 
-	RegisterBackgroundWorker(&worker);
+	databaseNameList = DatabaseNameList();
+
+	/* start a worker for each database */
+	foreach(databaseNameCell, databaseNameList)
+	{
+		char *databaseName = (char *) lfirst(databaseNameCell);
+
+		worker.bgw_main_arg = Int32GetDatum(databaseId++);
+		snprintf(worker.bgw_name, BGW_MAXLEN, "pg_cron_scheduler_%s", databaseName);
+
+		RegisterBackgroundWorker(&worker);
+	}
+
+	list_free(databaseNameList);
+}
+
+
+/*
+ * DatabaseNameList parses the value fo cron.database_name and returns
+ * it as a list of names.
+ */
+static List *
+DatabaseNameList(void)
+{
+	List *databaseNameList = NIL;
+	char *databaseNamesString = NULL;
+
+    /* need a modifiable copy */
+    databaseNamesString = pstrdup(CronTableDatabaseName);
+
+    if (!SplitIdentifierString(databaseNamesString, ',', &databaseNameList))
+    {
+		ereport(ERROR, (errcode(ERRCODE_SYNTAX_ERROR),
+						errmsg("invalid list syntax in cron.database_name parameter")));
+    }
+
+	return databaseNameList;
 }
 
 
@@ -210,6 +258,9 @@ void
 PgCronWorkerMain(Datum arg)
 {
 	MemoryContext CronLoopContext = NULL;
+	int databaseId = DatumGetInt32(arg);
+	List *databaseNameList = DatabaseNameList();
+	char *databaseName = list_nth(databaseNameList, databaseId);
 
 	/* Establish signal handlers before unblocking signals. */
 	pqsignal(SIGHUP, pg_cron_sighup);
@@ -220,7 +271,7 @@ PgCronWorkerMain(Datum arg)
 	BackgroundWorkerUnblockSignals();
 
 	/* Connect to our database */
-	BackgroundWorkerInitializeConnection(CronTableDatabaseName, NULL);
+	BackgroundWorkerInitializeConnection(databaseName, NULL);
 
 	CronLoopContext = AllocSetContextCreate(CurrentMemoryContext,
 											"pg_cron loop context",
@@ -231,7 +282,7 @@ PgCronWorkerMain(Datum arg)
 	InitializeJobMetadataCache();
 	InitializeTaskStateHash();
 
-	ereport(LOG, (errmsg("pg_cron scheduler started")));
+	ereport(LOG, (errmsg("pg_cron scheduler started for database %s", databaseName)));
 
 	MemoryContextSwitchTo(CronLoopContext);
 
@@ -258,7 +309,8 @@ PgCronWorkerMain(Datum arg)
 		MemoryContextReset(CronLoopContext);
 	}
 
-	ereport(LOG, (errmsg("pg_cron scheduler shutting down")));
+	ereport(LOG, (errmsg("pg_cron scheduler for database %s shutting down",
+						 databaseName)));
 
 	proc_exit(0);
 }

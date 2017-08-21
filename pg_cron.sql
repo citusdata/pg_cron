@@ -1,6 +1,9 @@
 DO $$
+DECLARE
+	database_name_setting text = current_setting('cron.database_name');
+	valid_databases name[] = string_to_array(database_name_setting, ',');
 BEGIN
-   IF current_database() <> current_setting('cron.database_name') THEN
+   IF NOT current_database() = ANY(valid_databases) THEN
       RAISE EXCEPTION 'can only create extension in database %',
                       current_setting('cron.database_name')
       USING DETAIL = 'Jobs must be scheduled from the database configured in '||

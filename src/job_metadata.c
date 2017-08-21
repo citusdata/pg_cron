@@ -27,6 +27,7 @@
 #include "catalog/pg_extension.h"
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
+#include "commands/dbcommands.h"
 #include "commands/extension.h"
 #include "commands/sequence.h"
 #include "commands/trigger.h"
@@ -179,6 +180,7 @@ cron_schedule(PG_FUNCTION_ARGS)
 
 	Oid userId = GetUserId();
 	char *userName = GetUserNameFromId(userId, false);
+	char *databaseName = get_database_name(MyDatabaseId);
 
 	parsedSchedule = parse_cron_entry(schedule);
 	if (parsedSchedule == NULL)
@@ -201,7 +203,7 @@ cron_schedule(PG_FUNCTION_ARGS)
 	values[Anum_cron_job_command - 1] = CStringGetTextDatum(command);
 	values[Anum_cron_job_nodename - 1] = CStringGetTextDatum("");
 	values[Anum_cron_job_nodeport - 1] = Int32GetDatum(PostPortNumber);
-	values[Anum_cron_job_database - 1] = CStringGetTextDatum(CronTableDatabaseName);
+	values[Anum_cron_job_database - 1] = CStringGetTextDatum(databaseName);
 	values[Anum_cron_job_username - 1] = CStringGetTextDatum(userName);
 
 	cronSchemaId = get_namespace_oid(CRON_SCHEMA_NAME, false);
@@ -217,7 +219,6 @@ cron_schedule(PG_FUNCTION_ARGS)
 	CatalogTupleInsert(cronJobsTable, heapTuple);
 #else
 	simple_heap_insert(cronJobsTable, heapTuple);
-#if (PG_VERSION_NUM < 100000)
 	CatalogUpdateIndexes(cronJobsTable, heapTuple);
 #endif
 	CommandCounterIncrement();
