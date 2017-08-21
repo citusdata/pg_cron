@@ -222,7 +222,7 @@ cron_schedule(PG_FUNCTION_ARGS)
 	CommandCounterIncrement();
 
 	/* close relation and invalidate previous cache entry */
-	heap_close(cronJobsTable, RowExclusiveLock);
+	heap_close(cronJobsTable, NoLock);
 
 	InvalidateJobCache();
 
@@ -376,7 +376,7 @@ cron_unschedule(PG_FUNCTION_ARGS)
 	simple_heap_delete(cronJobsTable, &heapTuple->t_self);
 
 	systable_endscan(scanDescriptor);
-	heap_close(cronJobsTable, RowExclusiveLock);
+	heap_close(cronJobsTable, NoLock);
 
 	CommandCounterIncrement();
 	InvalidateJobCache();
