@@ -1,9 +1,9 @@
 # src/test/modules/pg_cron/Makefile
 
 EXTENSION = pg_cron
-EXTVERSION = 1.0
+EXTVERSION = 2.0
 
-DATA_built = $(EXTENSION)--$(EXTVERSION).sql
+DATA_built = $(EXTENSION)--1.0.sql $(EXTENSION)--2.0.sql
 DATA = $(wildcard $(EXTENSION)--*--*.sql)
 
 # compilation configuration
@@ -18,4 +18,6 @@ PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 
 $(EXTENSION)--1.0.sql: $(EXTENSION).sql $(EXTENSION)--0.1--1.0.sql
+	cat $^ > $@
+$(EXTENSION)--2.0.sql: $(EXTENSION)--1.0.sql $(EXTENSION)--1.0--2.0.sql
 	cat $^ > $@
