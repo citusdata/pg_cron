@@ -39,12 +39,12 @@ The schedule uses the standard cron syntax, in which * means "run every time per
  │ │ │ │ │                  Saturday, or use names; 7 is also Sunday)
  │ │ │ │ │
  │ │ │ │ │
- * * * * * 
+ * * * * *
 ```
 
 An easy way to create a cron schedule is: [crontab.guru](http://crontab.guru/).
 
-The code in pg_cron that handles parsing and scheduling comes directly from the cron source code by Paul Vixie, hence the same options are supported.
+The code in pg_cron that handles parsing and scheduling comes directly from the cron source code by Paul Vixie, hence the same options are supported. Be aware that pg_cron always uses GMT!
 
 ## Installing pg_cron
 
