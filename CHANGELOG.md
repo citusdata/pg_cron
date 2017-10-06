@@ -1,3 +1,9 @@
+### pg_cron v1.0.2 (October 6, 2017) ###
+
+* PostgreSQL 10 support
+* Restrict the maximum number of concurrent tasks
+* Ensure table locks on cron.job are kept after schedule/unschedule
+
 ### pg_cron v1.0.1 (June 30, 2017) ###
 
 * Fixes a memory leak that occurs when a connection fails immediately
