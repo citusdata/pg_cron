@@ -912,7 +912,7 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 			{
 				char *command = cronJob->command;
 
-				ereport(LOG, (errmsg("cron job %ld starting: %s",
+				ereport(LOG, (errmsg("cron job " INT64_FORMAT " starting: %s",
 									 jobId, command)));
 			}
 
@@ -1119,7 +1119,7 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 							char *cmdStatus = PQcmdStatus(result);
 							char *cmdTuples = PQcmdTuples(result);
 
-							ereport(LOG, (errmsg("cron job %ld completed: %s %s",
+							ereport(LOG, (errmsg("cron job " INT64_FORMAT " completed: %s %s",
 												 jobId, cmdStatus, cmdTuples)));
 						}
 
@@ -1165,7 +1165,7 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 							char *rowString = ngettext("row", "rows",
 													   tupleCount);
 
-							ereport(LOG, (errmsg("cron job %ld completed: "
+							ereport(LOG, (errmsg("cron job " INT64_FORMAT " completed: "
 												 "%d %s",
 												 jobId, tupleCount,
 												 rowString)));
@@ -1206,7 +1206,7 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 
 			if (task->errorMessage != NULL)
 			{
-				ereport(LOG, (errmsg("cron job %ld %s",
+				ereport(LOG, (errmsg("cron job " INT64_FORMAT " %s",
 									 jobId, task->errorMessage)));
 
 				if (task->freeErrorMessage)
@@ -1216,7 +1216,7 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 			}
 			else
 			{
-				ereport(LOG, (errmsg("cron job %ld failed", jobId)));
+				ereport(LOG, (errmsg("cron job " INT64_FORMAT " failed", jobId)));
 			}
 
 			task->startDeadline = 0;

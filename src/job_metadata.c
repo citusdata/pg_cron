@@ -262,7 +262,7 @@ NextJobId(void)
 
 	SetUserIdAndSecContext(savedUserId, savedSecurityContext);
 
-	jobId = DatumGetUInt32(jobIdDatum);
+	jobId = DatumGetInt64(jobIdDatum);
 
 	return jobId;
 }
@@ -351,7 +351,7 @@ cron_unschedule(PG_FUNCTION_ARGS)
 	if (!HeapTupleIsValid(heapTuple))
 	{
 		ereport(ERROR, (errmsg("could not find valid entry for job "
-							   UINT64_FORMAT, jobId)));
+							   INT64_FORMAT, jobId)));
 	}
 
 	/* check if the current user owns the row */
@@ -558,14 +558,14 @@ TupleToCronJob(TupleDesc tupleDescriptor, HeapTuple heapTuple)
 
 	Assert(!HeapTupleHasNulls(heapTuple));
 
-	jobKey = DatumGetUInt32(jobId);
+	jobKey = DatumGetInt64(jobId);
 	job = hash_search(CronJobHash, &jobKey, HASH_ENTER, &isPresent);
 
-	job->jobId = DatumGetUInt32(jobId);
+	job->jobId = DatumGetInt64(jobId);
 	job->scheduleText = TextDatumGetCString(schedule);
 	job->command = TextDatumGetCString(command);
 	job->nodeName = TextDatumGetCString(nodeName);
-	job->nodePort = DatumGetUInt32(nodePort);
+	job->nodePort = DatumGetInt32(nodePort);
 	job->userName = TextDatumGetCString(userName);
 	job->database = TextDatumGetCString(database);
 
@@ -579,8 +579,8 @@ TupleToCronJob(TupleDesc tupleDescriptor, HeapTuple heapTuple)
 	}
 	else
 	{
-		ereport(LOG, (errmsg("invalid pg_cron schedule for job %ld: %s",
-							 jobId, job->scheduleText)));
+		ereport(LOG, (errmsg("invalid pg_cron schedule for job " INT64_FORMAT ": %s",
+							 job->jobId, job->scheduleText)));
 
 		/* a zeroed out schedule never runs */
 		memset(&job->schedule, 0, sizeof(entry));
