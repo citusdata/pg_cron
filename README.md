@@ -48,27 +48,22 @@ The code in pg_cron that handles parsing and scheduling comes directly from the 
 
 ## Installing pg_cron
 
-Install on Red Hat, CentOS, Fedora, Amazon Linux with PostgreSQL 9.6:
+Install on Red Hat, CentOS, Fedora, Amazon Linux with PostgreSQL 10:
 
 ```bash
 # Add Citus Data package repository
 curl https://install.citusdata.com/community/rpm.sh | sudo bash
 
 # Install the pg_cron extension
-sudo yum install -y pg_cron_96
+sudo yum install -y pg_cron_10
 ```
-<!---
 
-Install on Debian, Ubuntu with PostgreSQL 9.6:
+Install on Debian, Ubuntu with PostgreSQL 10 using [apt.postgresql.org](https://wiki.postgresql.org/wiki/Apt):
 
 ```bash
-# Add Citus Data package repository
-curl https://install.citusdata.com/community/deb.sh | sudo bash
-
 # Install the pg_cron extension
-sudo apt-get -y install postgresql-9.6-pgcron
+sudo apt-get -y install postgresql-10-cron
 ```
--->
 
 You can also install pg_cron by building it from source:
 
@@ -76,20 +71,23 @@ You can also install pg_cron by building it from source:
 git clone https://github.com/citusdata/pg_cron.git
 cd pg_cron
 # Ensure pg_config is in your path, e.g.
-export PATH=/usr/pgsql-9.6/bin:$PATH
+export PATH=/usr/pgsql-10/bin:$PATH
 make && sudo PATH=$PATH make install
 ```
 
 ## Setting up pg_cron
 
- To start the pg_cron background worker when PostgreSQL starts, you need to add pg_cron to `shared_preload_libraries` in postgresql.conf and restart PostgreSQL. Note that pg_cron does not run any jobs as a long a server is in [hot standby](https://www.postgresql.org/docs/current/static/hot-standby.html) mode, but it automatically starts when the server is promoted.
+To start the pg_cron background worker when PostgreSQL starts, you need to add pg_cron to `shared_preload_libraries` in postgresql.conf. Note that pg_cron does not run any jobs as a long a server is in [hot standby](https://www.postgresql.org/docs/current/static/hot-standby.html) mode, but it automatically starts when the server is promoted.
+
+By default, the pg_cron background worker expects its metadata tables to be created in the "postgres" database. However, you can configure this by setting the `cron.database_name` configuration parameter in postgresql.conf.
 
 ```
 # add to postgresql.conf:
 shared_preload_libraries = 'pg_cron'
+cron.database_name = 'postgres'
 ```
 
-After restarting PostgreSQL, you can create the pg_cron functions and metadata tables using `CREATE EXTENSION pg_cron`. By default, the pg_cron background worker expects its metadata tables to be created in the "postgres" database. However, you can configure this by setting the `cron.database_name` configuration parameter in postgresql.conf.
+After restarting PostgreSQL, you can create the pg_cron functions and metadata tables using `CREATE EXTENSION pg_cron`. 
 
 ```sql
 -- run as superuser:
@@ -99,7 +97,7 @@ CREATE EXTENSION pg_cron;
 GRANT USAGE ON SCHEMA cron TO marco;
 ```
 
-Internally, pg_cron uses libpq to open a new connection to the local database. It may be necessary to enable `trust` authentication for connections coming from localhost in [pg_hba.conf](https://www.postgresql.org/docs/current/static/auth-pg-hba-conf.html) for the user running the cron job. Alternatively, you can add the password to a [.pgpass file](https://www.postgresql.org/docs/current/static/libpq-pgpass.html), which libpq will use when opening a connection.
+**Important**: Internally, pg_cron uses libpq to open a new connection to the local database. It may be necessary to enable `trust` authentication for connections coming from localhost in [pg_hba.conf](https://www.postgresql.org/docs/current/static/auth-pg-hba-conf.html) for the user running the cron job. Alternatively, you can add the password to a [.pgpass file](https://www.postgresql.org/docs/current/static/libpq-pgpass.html), which libpq will use when opening a connection.
 
 For security, jobs are executed in the database in which the `cron.schedule` function is called with the same permissions as the current user. In addition, users are only able to see their own jobs in the `cron.job` table.
 
