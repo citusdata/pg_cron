@@ -1,10 +1,12 @@
 # src/test/modules/pg_cron/Makefile
 
 EXTENSION = pg_cron
-EXTVERSION = 1.0
+EXTVERSION = 1.1
 
-DATA_built = $(EXTENSION)--$(EXTVERSION).sql
+DATA_built = $(EXTENSION)--$(EXTVERSION).sql $(EXTENSION)--1.0.sql
 DATA = $(wildcard $(EXTENSION)--*--*.sql)
+REGRESS = pg_cron-test 
+REGRESS_OPTS = --dbname=postgres
 
 # compilation configuration
 MODULE_big = $(EXTENSION)
@@ -18,4 +20,6 @@ PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 
 $(EXTENSION)--1.0.sql: $(EXTENSION).sql $(EXTENSION)--0.1--1.0.sql
+	cat $^ > $@
+$(EXTENSION)--1.1.sql: $(EXTENSION).sql $(EXTENSION)--1.0--1.1.sql
 	cat $^ > $@

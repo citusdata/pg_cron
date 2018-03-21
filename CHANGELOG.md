@@ -1,3 +1,9 @@
+### pg_cron v1.1.0 (March 22, 2018) ###
+
+* Add new 'active' column on cron.job table to enable or disable job(s).
+* Added a regression test, simply run 'make installcheck'
+* Increased pg_cron version to 1.1
+
 ### pg_cron v1.0.2 (October 6, 2017) ###
 
 * PostgreSQL 10 support
