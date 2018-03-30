@@ -101,15 +101,34 @@ GRANT USAGE ON SCHEMA cron TO marco;
 
 For security, jobs are executed in the database in which the `cron.schedule` function is called with the same permissions as the current user. In addition, users are only able to see their own jobs in the `cron.job` table.
 
+## Example use cases
+
+Articles showing possible ways of using pg_cron:
+
+* [Auto-partitioning using pg_partman](https://www.citusdata.com/blog/2017/12/27/real-time-analytics-dashboards-with-citus/)
+* [Computing rollups in an anlytical dashboard](https://www.citusdata.com/blog/2017/12/27/real-time-analytics-dashboards-with-citus/)
+* [Deleting old data, vacuum](https://www.citusdata.com/blog/2016/09/09/pgcron-run-periodic-jobs-in-postgres/)
+* [Feeding cats](http://bonesmoses.org/2016/09/09/pg-phriday-irrelevant-inclinations/)
+
 ## Advanced usage
 
-Since pg_cron uses libpq, you can also run periodic jobs on other databases or other machines. This can be especially useful when you are using the [Citus extension](https://www.citusdata.com/product) to distribute tables across many PostgreSQL servers and need to run periodic jobs across all of them.
-
-If you are superuser, then you can manually modify the `cron.job` table and use custom values for nodename and nodeport to connect to a different machine:
+Since pg_cron uses libpq, you can also run periodic jobs on other databases or other machines. If you are superuser, then you can manually modify the `cron.job` table and use custom values for nodename and nodeport to connect to a different machine:
 
 ```sql
 INSERT INTO cron.job (schedule, command, nodename, nodeport, database, username)
-VALUES ('0 4 * * *', 'VACUUM', 'worker-node-1', 5432, 'postgres', 'marco');
+VALUES ('0 4 * * *', 'VACUUM', 'node-1', 5432, 'postgres', 'marco');
 ```
 
 You can use [.pgpass](https://www.postgresql.org/docs/current/static/libpq-pgpass.html) to allow pg_cron to authenticate with the remote server.
+
+## Managed services
+
+The following table keeps track of which of the major managed Postgres services support pg_cron. 
+
+| Service       | Supported     | Version  |
+| ------------- |:-------------:| --------:|
+| [Citus Cloud](https://www.citusdata.com/product/cloud)  | :heavy_check_mark: |   1.0    |
+| [Amazon RDS](https://aws.amazon.com/rds/postgresql/)     | :x:      |          |
+| [Azure](https://azure.microsoft.com/en-us/services/postgresql/) | :x:      |          |
+| [Google Cloud](https://cloud.google.com/sql/docs/postgres/) | :x:      |          |
+| [Heroku](https://elements.heroku.com/addons/heroku-postgresql) | :x: | |
