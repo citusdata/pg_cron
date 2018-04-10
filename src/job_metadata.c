@@ -163,7 +163,6 @@ cron_schedule(PG_FUNCTION_ARGS)
 
 	char *schedule = text_to_cstring(scheduleText);
 	char *command = text_to_cstring(commandText);
-
 	entry *parsedSchedule = NULL;
 
 	int64 jobId = 0;
@@ -204,7 +203,6 @@ cron_schedule(PG_FUNCTION_ARGS)
 	values[Anum_cron_job_nodeport - 1] = Int32GetDatum(PostPortNumber);
 	values[Anum_cron_job_database - 1] = CStringGetTextDatum(CronTableDatabaseName);
 	values[Anum_cron_job_username - 1] = CStringGetTextDatum(userName);
-
 
 	cronSchemaId = get_namespace_oid(CRON_SCHEMA_NAME, false);
 	cronJobsRelationId = get_relname_relid(JOBS_TABLE_NAME, cronSchemaId);
@@ -557,8 +555,6 @@ TupleToCronJob(TupleDesc tupleDescriptor, HeapTuple heapTuple)
 								  tupleDescriptor, &isNull);
 	Datum userName = heap_getattr(heapTuple, Anum_cron_job_username,
 								  tupleDescriptor, &isNull);
-	Datum active = heap_getattr(heapTuple, Anum_cron_job_active,
-                                                                  tupleDescriptor, &isNull);
 
 	Assert(!HeapTupleHasNulls(heapTuple));
 
@@ -572,7 +568,18 @@ TupleToCronJob(TupleDesc tupleDescriptor, HeapTuple heapTuple)
 	job->nodePort = DatumGetInt32(nodePort);
 	job->userName = TextDatumGetCString(userName);
 	job->database = TextDatumGetCString(database);
-	job->active = DatumGetBool(active);
+
+	if (HeapTupleHeaderGetNatts(heapTuple->t_data) >= Anum_cron_job_active)
+	{
+		Datum active = heap_getattr(heapTuple, Anum_cron_job_active,
+								tupleDescriptor, &isNull);
+		Assert(!isNull);
+		job->active = DatumGetBool(active);
+	}
+	else
+	{
+		job->active = true;
+	}
 
 	parsedSchedule = parse_cron_entry(job->scheduleText);
 	if (parsedSchedule != NULL)

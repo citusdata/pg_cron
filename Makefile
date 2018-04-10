@@ -6,7 +6,6 @@ EXTVERSION = 1.1
 DATA_built = $(EXTENSION)--$(EXTVERSION).sql $(EXTENSION)--1.0.sql
 DATA = $(wildcard $(EXTENSION)--*--*.sql)
 REGRESS = pg_cron-test 
-REGRESS_OPTS = --dbname=postgres
 
 # compilation configuration
 MODULE_big = $(EXTENSION)
