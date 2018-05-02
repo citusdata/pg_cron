@@ -2,6 +2,7 @@
 
 * Add new 'active' column on cron.job table to enable or disable job(s).
 * Added a regression test, simply run 'make installcheck'
+* Set relevant application_name in pg_stat_activity
 * Increased pg_cron version to 1.1
 
 ### pg_cron v1.0.2 (October 6, 2017) ###

@@ -241,6 +241,9 @@ PgCronWorkerMain(Datum arg)
 	/* Connect to our database */
 	BackgroundWorkerInitializeConnection(CronTableDatabaseName, NULL);
 
+	/* Make pg_cron recognisable in pg_stat_activity */
+	pgstat_report_appname("pg_cron scheduler");
+
 	/* Determine how many tasks we can run concurrently */
 	if (MaxConnections < MaxRunningTasks)
 	{
