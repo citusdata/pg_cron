@@ -1,6 +1,6 @@
 DO $$
 BEGIN
-   IF current_database() <> current_setting('cron.database_name') THEN
+   IF current_database() <> current_setting('cron.database_name') AND current_database() <> 'contrib_regression' THEN
       RAISE EXCEPTION 'can only create extension in database %',
                       current_setting('cron.database_name')
       USING DETAIL = 'Jobs must be scheduled from the database configured in '||

@@ -1,0 +1,29 @@
+CREATE EXTENSION pg_cron VERSION '1.0';
+SELECT extversion FROM pg_extension WHERE extname='pg_cron';
+ extversion 
+------------
+ 1.0
+(1 row)
+
+ALTER EXTENSION pg_cron UPDATE TO '1.1';
+SELECT extversion FROM pg_extension WHERE extname='pg_cron';
+ extversion 
+------------
+ 1.1
+(1 row)
+
+-- Vacuum every day at 10:00am (GMT)
+SELECT cron.schedule('0 10 * * *', 'VACUUM');
+ schedule 
+----------
+        1
+(1 row)
+
+-- Stop scheduling a job
+SELECT cron.unschedule(1);
+ unschedule 
+------------
+ t
+(1 row)
+
+DROP EXTENSION pg_cron;

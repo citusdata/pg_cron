@@ -26,6 +26,7 @@ typedef struct CronJob
 	int nodePort;
 	char *database;
 	char *userName;
+	bool active;
 } CronJob;
 
 

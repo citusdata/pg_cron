@@ -569,6 +569,18 @@ TupleToCronJob(TupleDesc tupleDescriptor, HeapTuple heapTuple)
 	job->userName = TextDatumGetCString(userName);
 	job->database = TextDatumGetCString(database);
 
+	if (HeapTupleHeaderGetNatts(heapTuple->t_data) >= Anum_cron_job_active)
+	{
+		Datum active = heap_getattr(heapTuple, Anum_cron_job_active,
+								tupleDescriptor, &isNull);
+		Assert(!isNull);
+		job->active = DatumGetBool(active);
+	}
+	else
+	{
+		job->active = true;
+	}
+
 	parsedSchedule = parse_cron_entry(job->scheduleText);
 	if (parsedSchedule != NULL)
 	{
