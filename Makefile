@@ -10,7 +10,11 @@ REGRESS = pg_cron-test
 # compilation configuration
 MODULE_big = $(EXTENSION)
 OBJS = $(patsubst %.c,%.o,$(wildcard src/*.c))
-PG_CPPFLAGS = -std=c99 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-maybe-uninitialized -Wno-implicit-fallthrough -Iinclude -I$(libpq_srcdir)
+ifeq ($(CC),gcc)
+    PG_CPPFLAGS = -std=c99 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-maybe-uninitialized -Wno-implicit-fallthrough -Iinclude -I$(libpq_srcdir)
+else
+    PG_CPPFLAGS = -std=c99 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-implicit-fallthrough -Iinclude -I$(libpq_srcdir)
+endif
 SHLIB_LINK = $(libpq)
 EXTRA_CLEAN += $(addprefix src/,*.gcno *.gcda) # clean up after profiling runs
 
