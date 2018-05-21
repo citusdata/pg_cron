@@ -90,11 +90,11 @@ InitializeJobMetadataCache(void)
 	/* watch for invalidation events */
 	CacheRegisterRelcacheCallback(InvalidateJobCacheCallback, (Datum) 0);
 
-	CronJobContext = AllocSetContextCreate(CurrentMemoryContext,
-										   "pg_cron job context",
-										   ALLOCSET_DEFAULT_MINSIZE,
-										   ALLOCSET_DEFAULT_INITSIZE,
-										   ALLOCSET_DEFAULT_MAXSIZE);
+	CronJobContext = PgAllocSetContextCreate(CurrentMemoryContext,
+											 "pg_cron job context",
+											 ALLOCSET_DEFAULT_MINSIZE,
+											 ALLOCSET_DEFAULT_INITSIZE,
+											 ALLOCSET_DEFAULT_MAXSIZE);
 
 	CronJobHash = CreateCronJobHash();
 }
@@ -369,7 +369,12 @@ cron_unschedule(PG_FUNCTION_ARGS)
 												ACL_DELETE);
 		if (aclResult != ACLCHECK_OK)
 		{
-			aclcheck_error(aclResult, ACL_KIND_CLASS,
+			aclcheck_error(aclResult,
+#if (PG_VERSION_NUM < 110000)
+						   ACL_KIND_CLASS,
+#else
+						   OBJECT_TABLE,
+#endif
 						   get_rel_name(CronJobRelationId()));
 		}
 	}

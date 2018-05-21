@@ -239,7 +239,11 @@ PgCronWorkerMain(Datum arg)
 	BackgroundWorkerUnblockSignals();
 
 	/* Connect to our database */
+#if (PG_VERSION_NUM < 110000)
 	BackgroundWorkerInitializeConnection(CronTableDatabaseName, NULL);
+#else
+	BackgroundWorkerInitializeConnection(CronTableDatabaseName, NULL, 0);
+#endif
 
 	/* Make pg_cron recognisable in pg_stat_activity */
 	pgstat_report_appname("pg_cron scheduler");
@@ -266,12 +270,12 @@ PgCronWorkerMain(Datum arg)
 		MaxRunningTasks = 1;
 	}
 
-	CronLoopContext = AllocSetContextCreate(CurrentMemoryContext,
-											"pg_cron loop context",
-											ALLOCSET_DEFAULT_MINSIZE,
-											ALLOCSET_DEFAULT_INITSIZE,
-											ALLOCSET_DEFAULT_MAXSIZE);
 
+	CronLoopContext = PgAllocSetContextCreate(CurrentMemoryContext,
+											  "pg_cron loop context",
+											  ALLOCSET_DEFAULT_MINSIZE,
+											  ALLOCSET_DEFAULT_INITSIZE,
+											  ALLOCSET_DEFAULT_MAXSIZE);
 	InitializeJobMetadataCache();
 	InitializeTaskStateHash();
 
