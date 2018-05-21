@@ -36,11 +36,11 @@ static HTAB *CronTaskHash = NULL;
 void
 InitializeTaskStateHash(void)
 {
-	CronTaskContext = AllocSetContextCreate(CurrentMemoryContext,
-											"pg_cron task context",
-											ALLOCSET_DEFAULT_MINSIZE,
-											ALLOCSET_DEFAULT_INITSIZE,
-											ALLOCSET_DEFAULT_MAXSIZE);
+	CronTaskContext = PgAllocSetContextCreate(CurrentMemoryContext,
+											  "pg_cron task context",
+											  ALLOCSET_DEFAULT_MINSIZE,
+											  ALLOCSET_DEFAULT_INITSIZE,
+											  ALLOCSET_DEFAULT_MAXSIZE);
 
 	CronTaskHash = CreateCronTaskHash();
 }
