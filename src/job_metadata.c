@@ -203,6 +203,7 @@ cron_schedule(PG_FUNCTION_ARGS)
 	values[Anum_cron_job_nodeport - 1] = Int32GetDatum(PostPortNumber);
 	values[Anum_cron_job_database - 1] = CStringGetTextDatum(CronTableDatabaseName);
 	values[Anum_cron_job_username - 1] = CStringGetTextDatum(userName);
+	values[Anum_cron_job_active - 1] = BoolGetDatum(true);
 
 	cronSchemaId = get_namespace_oid(CRON_SCHEMA_NAME, false);
 	cronJobsRelationId = get_relname_relid(JOBS_TABLE_NAME, cronSchemaId);
