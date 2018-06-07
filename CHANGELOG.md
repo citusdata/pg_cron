@@ -1,3 +1,7 @@
+### pg_cron v1.1.1 (June 7, 2018) ###
+
+* Fixed a bug that would cause new jobs to be created as inactive
+
 ### pg_cron v1.1.0 (March 22, 2018) ###
 
 * Add new 'active' column on cron.job table to enable or disable job(s).
