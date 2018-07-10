@@ -1,3 +1,8 @@
+### pg_cron v1.1.2 (July 10, 2018) ###
+
+* PostgreSQL 11 support by dverite
+* Fix a clang build error by kxjhlele
+
 ### pg_cron v1.1.1 (June 7, 2018) ###
 
 * Fixed a bug that would cause new jobs to be created as inactive
