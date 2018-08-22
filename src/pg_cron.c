@@ -186,7 +186,10 @@ _PG_init(void)
 	worker.bgw_notify_pid = 0;
 	sprintf(worker.bgw_library_name, "pg_cron");
 	sprintf(worker.bgw_function_name, "PgCronWorkerMain");
-	snprintf(worker.bgw_name, BGW_MAXLEN, "pg_cron_scheduler");
+	snprintf(worker.bgw_name, BGW_MAXLEN, "pg_cron scheduler");
+#if (PG_VERSION_NUM >= 110000)
+	snprintf(worker.bgw_type, BGW_MAXLEN, "pg_cron scheduler");
+#endif
 
 	RegisterBackgroundWorker(&worker);
 }
