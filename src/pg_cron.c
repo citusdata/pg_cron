@@ -130,6 +130,11 @@ _PG_init(void)
 {
 	BackgroundWorker worker;
 
+	if (IsBinaryUpgrade)
+	{
+		return;
+	}
+
 	if (!process_shared_preload_libraries_in_progress)
 	{
 		ereport(ERROR, (errmsg("pg_cron can only be loaded via shared_preload_libraries"),
