@@ -692,6 +692,8 @@ PollForTasks(List *taskList)
 		CronTask *task = (CronTask *) lfirst(taskCell);
 		PostgresPollingStatusType pollingStatus = task->pollingStatus;
 		struct pollfd *pollFileDescriptor = &pollFDs[activeTaskCount];
+		PGconn *connection = task->connection;
+		int pollEventMask = 0;
 
 		if (activeTaskCount >= MaxRunningTasks)
 		{
@@ -708,62 +710,53 @@ PollForTasks(List *taskList)
 			return;
 		}
 
-		if (task->state == CRON_TASK_WAITING && task->pendingRunCount == 0)
+		switch(task->state)
 		{
-			/* don't poll idle tasks */
-			continue;
+			case CRON_TASK_WAITING:
+			case CRON_TASK_START:
+			case CRON_TASK_RECEIVING:
+				/* don't poll these tasks */
+				continue;
+			case CRON_TASK_CONNECTING:
+			case CRON_TASK_SENDING:
+				/*
+				 * We need to wake up when a timeout expires.
+				 * Take the minimum of nextEventTime and task->startDeadline.
+				 */
+				if (TimestampDifferenceExceeds(task->startDeadline, nextEventTime, 0))
+				{
+					nextEventTime = task->startDeadline;
+				}
+
+				/* fall through */
+
+			case CRON_TASK_RUNNING:
+				/* we plan to poll this task */
+				break;
+			default:
+				/* CRON_TASK_ERROR and CRON_TASK_DONE were handled above */
+				elog(ERROR, "unknown task state %d", task->state);
 		}
 
-		if (task->state == CRON_TASK_CONNECTING ||
-			task->state == CRON_TASK_SENDING)
-		{
-			/*
-			 * We need to wake up when a timeout expires.
-			 * Take the minimum of nextEventTime and task->startDeadline.
-			 */
-			if (TimestampDifferenceExceeds(task->startDeadline, nextEventTime, 0))
-			{
-				nextEventTime = task->startDeadline;
-			}
-		}
-
-		/* we plan to poll this task */
 		pollFileDescriptor = &pollFDs[activeTaskCount];
 		polledTasks[activeTaskCount] = task;
 
-		if (task->state == CRON_TASK_CONNECTING ||
-			task->state == CRON_TASK_SENDING ||
-			task->state == CRON_TASK_RUNNING)
+		/*
+		 * Set the appropriate mask for poll, based on the current polling
+		 * status of the task, controlled by ManageCronTask.
+		 */
+
+		if (pollingStatus == PGRES_POLLING_READING)
 		{
-			PGconn *connection = task->connection;
-			int pollEventMask = 0;
-
-			/*
-			 * Set the appropriate mask for poll, based on the current polling
-			 * status of the task, controlled by ManageCronTask.
-			 */
-
-			if (pollingStatus == PGRES_POLLING_READING)
-			{
-				pollEventMask = POLLERR | POLLIN;
-			}
-			else if (pollingStatus == PGRES_POLLING_WRITING)
-			{
-				pollEventMask = POLLERR | POLLOUT;
-			}
-
-			pollFileDescriptor->fd = PQsocket(connection);
-			pollFileDescriptor->events = pollEventMask;
+			pollEventMask = POLLERR | POLLIN;
 		}
-		else
+		else if (pollingStatus == PGRES_POLLING_WRITING)
 		{
-			/*
-			 * Task is not running.
-			 */
-
-			pollFileDescriptor->fd = -1;
-			pollFileDescriptor->events = 0;
+			pollEventMask = POLLERR | POLLOUT;
 		}
+
+		pollFileDescriptor->fd = PQsocket(connection);
+		pollFileDescriptor->events = pollEventMask;
 
 		pollFileDescriptor->revents = 0;
 
