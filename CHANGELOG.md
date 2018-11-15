@@ -1,3 +1,8 @@
+### pg_cron v1.1.3 (November 15, 2018) ###
+
+* Fixes a bug that causes pg_cron to run during pg_upgrade
+* Fixes a bug that causes pg_cron to show up incorrectly in pg_stat_activity in PG11
+
 ### pg_cron v1.1.2 (July 10, 2018) ###
 
 * PostgreSQL 11 support by dverite
