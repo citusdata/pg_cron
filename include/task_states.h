@@ -45,11 +45,11 @@ typedef struct CronTask
 } CronTask;
 
 
-extern void InitializeTaskStateHash(void);
-extern void RefreshTaskHash(void);
-extern List * CurrentTaskList(void);
-extern void InitializeCronTask(CronTask *task, int64 jobId);
-extern void RemoveTask(int64 jobId);
+PGDLLEXPORT extern void InitializeTaskStateHash(void);
+PGDLLEXPORT extern void RefreshTaskHash(void);
+PGDLLEXPORT extern List * CurrentTaskList(void);
+PGDLLEXPORT extern void InitializeCronTask(CronTask *task, int64 jobId);
+PGDLLEXPORT extern void RemoveTask(int64 jobId);
 
 
 #endif

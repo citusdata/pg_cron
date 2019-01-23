@@ -72,6 +72,9 @@ PG_FUNCTION_INFO_V1(cron_schedule);
 PG_FUNCTION_INFO_V1(cron_unschedule);
 PG_FUNCTION_INFO_V1(cron_job_cache_invalidate);
 
+PGDLLEXPORT Datum cron_schedule(PG_FUNCTION_ARGS);
+PGDLLEXPORT Datum cron_unschedule(PG_FUNCTION_ARGS);
+PGDLLEXPORT Datum cron_job_cache_invalidate(PG_FUNCTION_ARGS);
 
 /* global variables */
 static MemoryContext CronJobContext = NULL;

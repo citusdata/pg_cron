@@ -35,10 +35,10 @@ extern bool CronJobCacheValid;
 
 
 /* functions for retrieving job metadata */
-extern void InitializeJobMetadataCache(void);
-extern void ResetJobMetadataCache(void);
-extern List * LoadCronJobList(void);
-extern CronJob * GetCronJob(int64 jobId);
+PGDLLEXPORT extern void InitializeJobMetadataCache(void);
+PGDLLEXPORT extern void ResetJobMetadataCache(void);
+PGDLLEXPORT extern List * LoadCronJobList(void);
+PGDLLEXPORT extern CronJob * GetCronJob(int64 jobId);
 
 
 #endif

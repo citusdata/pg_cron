@@ -83,11 +83,11 @@ typedef enum
 
 
 /* forward declarations */
-void _PG_init(void);
-void _PG_fini(void);
+PGDLLEXPORT void _PG_init(void);
+PGDLLEXPORT void _PG_fini(void);
 static void pg_cron_sigterm(SIGNAL_ARGS);
 static void pg_cron_sighup(SIGNAL_ARGS);
-void PgCronWorkerMain(Datum arg);
+PGDLLEXPORT void PgCronWorkerMain(Datum arg);
 
 static void StartAllPendingRuns(List *taskList, TimestampTz currentTime);
 static void StartPendingRuns(CronTask *task, ClockProgress clockProgress,

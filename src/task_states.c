@@ -130,7 +130,7 @@ GetCronTask(int64 jobId)
 /*
  * InitializeCronTask intializes a CronTask struct.
  */
-void
+PGDLLEXPORT void
 InitializeCronTask(CronTask *task, int64 jobId)
 {
 	task->runId = 0;
