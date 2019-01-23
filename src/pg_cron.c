@@ -8,7 +8,9 @@
  *
  *-------------------------------------------------------------------------
  */
+#ifdef HAVE_SYS_RESOURCE_H
 #include <sys/resource.h>
+#endif 
 
 #include "postgres.h"
 #include "fmgr.h"
@@ -31,10 +33,12 @@
 #include "task_states.h"
 #include "job_metadata.h"
 
-#include "poll.h"
-#include "sys/time.h"
-#include "sys/poll.h"
-#include "time.h"
+#ifdef HAVE_SYS_POLL_H
+#include <sys/poll.h>
+#elif defined(HAVE_POLL_H)
+#include <poll.h>
+#endif
+#include <time.h>
 
 #include "access/genam.h"
 #include "access/heapam.h"
@@ -68,12 +72,17 @@
 #endif
 #include "tcop/utility.h"
 
+#ifdef _MSC_VER
+#include "winCompat.h"
+#pragma comment(lib, "Ws2_32.lib")
+const int MAX_RUNNING_TASKS = 5;
+#endif
 
 PG_MODULE_MAGIC;
 
 
 /* ways in which the clock can change between main loop iterations */
-typedef enum
+typedef enum _ClockProgress
 {
 	CLOCK_JUMP_BACKWARD = 0,
 	CLOCK_PROGRESSED = 1,
@@ -236,7 +245,10 @@ void
 PgCronWorkerMain(Datum arg)
 {
 	MemoryContext CronLoopContext = NULL;
+
+#ifndef _MSC_VER
 	struct rlimit limit;
+#endif
 
 	/* Establish signal handlers before unblocking signals. */
 	pqsignal(SIGHUP, pg_cron_sighup);
@@ -266,7 +278,12 @@ PgCronWorkerMain(Datum arg)
 	{
 		MaxRunningTasks = max_files_per_process;
 	}
-
+#ifdef _MSC_VER
+	/* Windows does not have getrlimit
+	 * Artificially constrict the number of running tasks to MAX_RUNNING_TASKS
+	 */
+	MaxRunningTasks = MAX_RUNNING_TASKS;
+#else
 	if (getrlimit(RLIMIT_NOFILE, &limit) != 0 &&
 		limit.rlim_cur < (uint32) MaxRunningTasks)
 	{
@@ -277,6 +294,7 @@ PgCronWorkerMain(Datum arg)
 	{
 		MaxRunningTasks = 1;
 	}
+#endif
 
 
 	CronLoopContext = PgAllocSetContextCreate(CurrentMemoryContext,
@@ -745,11 +763,19 @@ PollForTasks(List *taskList)
 
 			if (pollingStatus == PGRES_POLLING_READING)
 			{
+#ifdef _MSC_VER
+				pollEventMask = POLLRDNORM;
+#else
 				pollEventMask = POLLERR | POLLIN;
+#endif
 			}
 			else if (pollingStatus == PGRES_POLLING_WRITING)
 			{
+#ifdef _MSC_VER
+				pollEventMask = POLLWRNORM;
+#else
 				pollEventMask = POLLERR | POLLOUT;
+#endif
 			}
 
 			pollFileDescriptor->fd = PQsocket(connection);
@@ -803,13 +829,26 @@ PollForTasks(List *taskList)
 		return;
 	}
 
-	pollResult = poll(pollFDs, activeTaskCount, pollTimeout);
+#ifdef _MSC_VER
+		pollResult = WSAPoll(pollFDs, activeTaskCount, pollTimeout);
+#else
+		pollResult = poll(pollFDs, activeTaskCount, pollTimeout);
+#endif
+
 	if (pollResult < 0)
-	{
+	{		
+#ifdef _MSC_VER
+		if (pollResult < 0) {
+			int err;
+			err = WSAGetLastError();
+			ereport(ERROR, (errmsg("Error with polling. WSAGetLastError says %d", err)));
+		}
+#else 
 		/*
 		 * This typically happens in case of a signal, though we should
 		 * probably check errno in case something bad happened.
 		 */
+#endif
 
 		pfree(polledTasks);
 		pfree(pollFDs);
@@ -821,8 +860,13 @@ PollForTasks(List *taskList)
 		CronTask *task = polledTasks[taskIndex];
 		struct pollfd *pollFileDescriptor = &pollFDs[taskIndex];
 
-		task->isSocketReady = pollFileDescriptor->revents &
+#ifdef _MSC_VER
+			task->isSocketReady = ( 
+				pollFileDescriptor->revents == pollFileDescriptor->events);
+#else
+			task->isSocketReady = pollFileDescriptor->revents &
 							  pollFileDescriptor->events;
+#endif
 	}
 
 	pfree(polledTasks);

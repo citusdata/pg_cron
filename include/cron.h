@@ -39,6 +39,10 @@
 # include <time.h>
 #endif
 
+#ifdef _MSC_VER
+#include "winCompat.h"
+#endif
+
 	/* these are really immutable, and are
 	 *   defined for symbolic convenience only
 	 * TRUE, FALSE, and ERR must be distinct
