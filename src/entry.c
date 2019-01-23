@@ -77,7 +77,7 @@ parse_cron_entry(char *schedule)
 	entry *e = NULL;
 	int	ch = 0;
 	char cmd[MAX_COMMAND];
-	file_buffer buffer = {{},0,0,{},0};
+	file_buffer buffer = {{0},0,0,{0},0};
 	FILE *file = (FILE *) &buffer;
 
 	int scheduleLength = strlen(schedule); 
