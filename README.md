@@ -18,7 +18,7 @@ SELECT cron.schedule('0 10 * * *', 'VACUUM');
  schedule
 ----------
        43
-    
+
 -- Stop scheduling a job
 SELECT cron.unschedule(43);
  unschedule
@@ -87,7 +87,7 @@ shared_preload_libraries = 'pg_cron'
 cron.database_name = 'postgres'
 ```
 
-After restarting PostgreSQL, you can create the pg_cron functions and metadata tables using `CREATE EXTENSION pg_cron`. 
+After restarting PostgreSQL, you can create the pg_cron functions and metadata tables using `CREATE EXTENSION pg_cron`.
 
 ```sql
 -- run as superuser:
@@ -106,7 +106,7 @@ For security, jobs are executed in the database in which the `cron.schedule` fun
 Articles showing possible ways of using pg_cron:
 
 * [Auto-partitioning using pg_partman](https://www.citusdata.com/blog/2017/12/27/real-time-analytics-dashboards-with-citus/)
-* [Computing rollups in an anlytical dashboard](https://www.citusdata.com/blog/2017/12/27/real-time-analytics-dashboards-with-citus/)
+* [Computing rollups in an analytical dashboard](https://www.citusdata.com/blog/2017/12/27/real-time-analytics-dashboards-with-citus/)
 * [Deleting old data, vacuum](https://www.citusdata.com/blog/2016/09/09/pgcron-run-periodic-jobs-in-postgres/)
 * [Feeding cats](http://bonesmoses.org/2016/09/09/pg-phriday-irrelevant-inclinations/)
 
@@ -123,7 +123,7 @@ You can use [.pgpass](https://www.postgresql.org/docs/current/static/libpq-pgpas
 
 ## Managed services
 
-The following table keeps track of which of the major managed Postgres services support pg_cron. 
+The following table keeps track of which of the major managed Postgres services support pg_cron.
 
 | Service       | Supported     | Version  |
 | ------------- |:-------------:| --------:|
