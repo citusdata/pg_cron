@@ -48,21 +48,21 @@ The code in pg_cron that handles parsing and scheduling comes directly from the 
 
 ## Installing pg_cron
 
-Install on Red Hat, CentOS, Fedora, Amazon Linux with PostgreSQL 10:
+Install on Red Hat, CentOS, Fedora, Amazon Linux with PostgreSQL 11:
 
 ```bash
 # Add Citus Data package repository
 curl https://install.citusdata.com/community/rpm.sh | sudo bash
 
 # Install the pg_cron extension
-sudo yum install -y pg_cron_10
+sudo yum install -y pg_cron_11
 ```
 
-Install on Debian, Ubuntu with PostgreSQL 10 using [apt.postgresql.org](https://wiki.postgresql.org/wiki/Apt):
+Install on Debian, Ubuntu with PostgreSQL 11 using [apt.postgresql.org](https://wiki.postgresql.org/wiki/Apt):
 
 ```bash
 # Install the pg_cron extension
-sudo apt-get -y install postgresql-10-cron
+sudo apt-get -y install postgresql-11-cron
 ```
 
 You can also install pg_cron by building it from source:
@@ -71,7 +71,7 @@ You can also install pg_cron by building it from source:
 git clone https://github.com/citusdata/pg_cron.git
 cd pg_cron
 # Ensure pg_config is in your path, e.g.
-export PATH=/usr/pgsql-10/bin:$PATH
+export PATH=/usr/pgsql-11/bin:$PATH
 make && sudo PATH=$PATH make install
 ```
 
