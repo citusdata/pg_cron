@@ -395,6 +395,16 @@ StartAllPendingRuns(List *taskList, TimestampTz currentTime)
 	{
 		CronTask *task = (CronTask *) lfirst(taskCell);
 
+		if (!task->isActive)
+		{
+			/*
+			 * The job has been unscheduled, so we should not schedule
+			 * new runs. The task will be safely removed on the next call
+			 * to ManageCronTask.
+			 */
+			continue;
+		}
+
 		StartPendingRuns(task, clockProgress, lastMinute, currentTime);
 	}
 
@@ -423,7 +433,6 @@ StartPendingRuns(CronTask *task, ClockProgress clockProgress,
 	entry *schedule = &cronJob->schedule;
 	TimestampTz virtualTime = lastMinute;
 	TimestampTz currentMinute = TimestampMinuteStart(currentTime);
-
 
 	switch (clockProgress)
 	{
