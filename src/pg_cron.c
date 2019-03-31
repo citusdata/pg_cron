@@ -174,6 +174,15 @@ _PG_init(void)
 		GUC_SUPERUSER_ONLY,
 		NULL, NULL, NULL);
 
+	DefineCustomStringVariable(
+		"cron.host",
+		gettext_noop("Hostname to connect to postgres."),
+		NULL,
+		&CronHost,
+		"localhost",
+		PGC_POSTMASTER,
+		GUC_SUPERUSER_ONLY,
+		NULL, NULL, NULL);
 
 	/* set up common data for all our workers */
 	worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
