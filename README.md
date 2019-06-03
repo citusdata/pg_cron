@@ -109,6 +109,7 @@ Articles showing possible ways of using pg_cron:
 * [Computing rollups in an analytical dashboard](https://www.citusdata.com/blog/2017/12/27/real-time-analytics-dashboards-with-citus/)
 * [Deleting old data, vacuum](https://www.citusdata.com/blog/2016/09/09/pgcron-run-periodic-jobs-in-postgres/)
 * [Feeding cats](http://bonesmoses.org/2016/09/09/pg-phriday-irrelevant-inclinations/)
+* [Routinely invoking a function](https://fluca1978.github.io/2019/05/21/pgcron.html)
 
 ## Advanced usage
 
