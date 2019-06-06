@@ -91,7 +91,7 @@ InitializeJobMetadataCache(void)
 	/* watch for invalidation events */
 	CacheRegisterRelcacheCallback(InvalidateJobCacheCallback, (Datum) 0);
 
-	CronJobContext = PgAllocSetContextCreate(CurrentMemoryContext,
+	CronJobContext = AllocSetContextCreate(CurrentMemoryContext,
 											 "pg_cron job context",
 											 ALLOCSET_DEFAULT_MINSIZE,
 											 ALLOCSET_DEFAULT_INITSIZE,
