@@ -1,9 +1,9 @@
 # src/test/modules/pg_cron/Makefile
 
 EXTENSION = pg_cron
-EXTVERSION = 1.1
+EXTVERSION = 1.2
 
-DATA_built = $(EXTENSION)--$(EXTVERSION).sql $(EXTENSION)--1.0.sql
+DATA_built = $(EXTENSION)--1.0.sql
 DATA = $(wildcard $(EXTENSION)--*--*.sql)
 REGRESS = pg_cron-test 
 
@@ -22,7 +22,5 @@ PG_CONFIG = pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 
-$(EXTENSION)--1.0.sql: $(EXTENSION).sql $(EXTENSION)--0.1--1.0.sql
-	cat $^ > $@
-$(EXTENSION)--1.1.sql: $(EXTENSION).sql $(EXTENSION)--1.0--1.1.sql
+$(EXTENSION)--1.0.sql: $(EXTENSION).sql
 	cat $^ > $@
