@@ -5,11 +5,11 @@ SELECT extversion FROM pg_extension WHERE extname='pg_cron';
  1.0
 (1 row)
 
-ALTER EXTENSION pg_cron UPDATE TO '1.1';
+ALTER EXTENSION pg_cron UPDATE TO '1.3';
 SELECT extversion FROM pg_extension WHERE extname='pg_cron';
  extversion 
 ------------
- 1.1
+ 1.3
 (1 row)
 
 -- Vacuum every day at 10:00am (GMT)
@@ -36,6 +36,61 @@ SELECT cron.schedule('@restart', 'ALTER EXTENSION pg_cron UPDATE');
  schedule 
 ----------
         2
+(1 row)
+
+-- Vacuum every day at 10:00am (GMT)
+SELECT cron.schedule('myvacuum', '0 10 * * *', 'VACUUM');
+ schedule 
+----------
+        3
+(1 row)
+
+SELECT jobid, jobname, schedule, command FROM cron.job ORDER BY jobid;
+ jobid | jobname  |  schedule  |            command             
+-------+----------+------------+--------------------------------
+     2 |          | @restart   | ALTER EXTENSION pg_cron UPDATE
+     3 | myvacuum | 0 10 * * * | VACUUM
+(2 rows)
+
+-- Make that 11:00am (GMT)
+SELECT cron.schedule('myvacuum', '0 11 * * *', 'VACUUM');
+ schedule 
+----------
+        3
+(1 row)
+
+SELECT jobid, jobname, schedule, command FROM cron.job ORDER BY jobid;
+ jobid | jobname  |  schedule  |            command             
+-------+----------+------------+--------------------------------
+     2 |          | @restart   | ALTER EXTENSION pg_cron UPDATE
+     3 | myvacuum | 0 11 * * * | VACUUM
+(2 rows)
+
+-- Make that VACUUM FULL
+SELECT cron.schedule('myvacuum', '0 11 * * *', 'VACUUM FULL');
+ schedule 
+----------
+        3
+(1 row)
+
+SELECT jobid, jobname, schedule, command FROM cron.job ORDER BY jobid;
+ jobid | jobname  |  schedule  |            command             
+-------+----------+------------+--------------------------------
+     2 |          | @restart   | ALTER EXTENSION pg_cron UPDATE
+     3 | myvacuum | 0 11 * * * | VACUUM FULL
+(2 rows)
+
+-- Stop scheduling a job
+SELECT cron.unschedule('myvacuum');
+ unschedule 
+------------
+ t
+(1 row)
+
+SELECT jobid, jobname, schedule, command FROM cron.job ORDER BY jobid;
+ jobid | jobname | schedule |            command             
+-------+---------+----------+--------------------------------
+     2 |         | @restart | ALTER EXTENSION pg_cron UPDATE
 (1 row)
 
 DROP EXTENSION pg_cron;

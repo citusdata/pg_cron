@@ -20,3 +20,19 @@ CREATE POLICY cron_job_run_details_policy ON cron.job_run_details USING (usernam
 
 SELECT pg_catalog.pg_extension_config_dump('cron.job_run_details', '');
 SELECT pg_catalog.pg_extension_config_dump('cron.runid_seq', '');
+
+ALTER TABLE cron.job ADD COLUMN jobname name UNIQUE;
+
+CREATE FUNCTION cron.schedule(job_name name, schedule text, command text)
+    RETURNS bigint
+    LANGUAGE C STRICT
+    AS 'MODULE_PATHNAME', $$cron_schedule_named$$;
+COMMENT ON FUNCTION cron.schedule(name,text,text)
+    IS 'schedule a pg_cron job';
+
+CREATE FUNCTION cron.unschedule(job_name name)
+    RETURNS bool
+    LANGUAGE C STRICT
+    AS 'MODULE_PATHNAME', $$cron_unschedule_named$$;
+COMMENT ON FUNCTION cron.unschedule(name)
+    IS 'unschedule a pg_cron job';
