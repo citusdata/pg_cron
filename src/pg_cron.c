@@ -1130,97 +1130,114 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 				break;
 			}
 
-			PQconsumeInput(connection);
-
-			connectionBusy = PQisBusy(connection);
-			if (connectionBusy)
+			/*
+			 * We could be receiving multiple results from multiple commands.
+			 * Need to check for blocking after processing each result.
+			 */
+			while (true)
 			{
-				/* still waiting for results */
-				break;
-			}
-
-			while ((result = PQgetResult(connection)) != NULL)
-			{
-				ExecStatusType executionStatus = PQresultStatus(result);
-
-				switch (executionStatus)
+				if (!PQconsumeInput(connection))
 				{
-					case PGRES_COMMAND_OK:
-					{
-						if (CronLogStatement)
-						{
-							char *cmdStatus = PQcmdStatus(result);
-							char *cmdTuples = PQcmdTuples(result);
-
-							ereport(LOG, (errmsg("cron job " INT64_FORMAT " completed: %s %s",
-												 jobId, cmdStatus, cmdTuples)));
-						}
-
-						break;
-					}
-
-					case PGRES_BAD_RESPONSE:
-					case PGRES_FATAL_ERROR:
-					{
-						task->errorMessage = strdup(PQresultErrorMessage(result));
-						task->freeErrorMessage = true;
-						task->pollingStatus = 0;
-						task->state = CRON_TASK_ERROR;
-
-						PQclear(result);
-
-						return;
-					}
-
-					case PGRES_COPY_IN:
-					case PGRES_COPY_OUT:
-					case PGRES_COPY_BOTH:
-					{
-						/* cannot handle COPY input/output */
-						task->errorMessage = "COPY not supported";
-						task->pollingStatus = 0;
-						task->state = CRON_TASK_ERROR;
-
-						PQclear(result);
-
-						return;
-					}
-
-					case PGRES_TUPLES_OK:
-					case PGRES_EMPTY_QUERY:
-					case PGRES_SINGLE_TUPLE:
-					case PGRES_NONFATAL_ERROR:
-					default:
-					{
-						if (CronLogStatement)
-						{
-							int tupleCount = PQntuples(result);
-							char *rowString = ngettext("row", "rows",
-													   tupleCount);
-
-							ereport(LOG, (errmsg("cron job " INT64_FORMAT " completed: "
-												 "%d %s",
-												 jobId, tupleCount,
-												 rowString)));
-						}
-
-						break;
-					}
-
+					task->errorMessage = "connection lost";
+					task->pollingStatus = 0;
+					task->state = CRON_TASK_ERROR;
+					break;
 				}
 
-				PQclear(result);
+				connectionBusy = PQisBusy(connection);
+				if (connectionBusy)
+				{
+					/* still waiting for results */
+					break;
+				}
+
+				result = PQgetResult(connection);
+				if (result != NULL)
+				{
+					ExecStatusType executionStatus = PQresultStatus(result);
+
+					switch (executionStatus)
+					{
+						case PGRES_COMMAND_OK:
+						{
+							if (CronLogStatement)
+							{
+								char *cmdStatus = PQcmdStatus(result);
+								char *cmdTuples = PQcmdTuples(result);
+
+								ereport(LOG, (errmsg("cron job " INT64_FORMAT " completed: %s %s",
+													 jobId, cmdStatus, cmdTuples)));
+							}
+
+							break;
+						}
+
+						case PGRES_BAD_RESPONSE:
+						case PGRES_FATAL_ERROR:
+						{
+							task->errorMessage = strdup(PQresultErrorMessage(result));
+							task->freeErrorMessage = true;
+							task->pollingStatus = 0;
+							task->state = CRON_TASK_ERROR;
+
+							PQclear(result);
+
+							return;
+						}
+
+						case PGRES_COPY_IN:
+						case PGRES_COPY_OUT:
+						case PGRES_COPY_BOTH:
+						{
+							/* cannot handle COPY input/output */
+							task->errorMessage = "COPY not supported";
+							task->pollingStatus = 0;
+							task->state = CRON_TASK_ERROR;
+
+							PQclear(result);
+
+							return;
+						}
+
+						case PGRES_TUPLES_OK:
+						case PGRES_EMPTY_QUERY:
+						case PGRES_SINGLE_TUPLE:
+						case PGRES_NONFATAL_ERROR:
+						default:
+						{
+							if (CronLogStatement)
+							{
+								int tupleCount = PQntuples(result);
+								char *rowString = ngettext("row", "rows",
+														   tupleCount);
+
+								ereport(LOG, (errmsg("cron job " INT64_FORMAT " completed: "
+													 "%d %s",
+													 jobId, tupleCount,
+													 rowString)));
+							}
+
+							break;
+						}
+
+					}
+
+					PQclear(result);
+				}
+				else
+				{
+					/* Got final result from query */
+					PQfinish(connection);
+
+					task->connection = NULL;
+					task->pollingStatus = 0;
+					task->isSocketReady = false;
+					task->state = CRON_TASK_DONE;
+
+					RunningTaskCount--;
+					break;
+				}
 			}
-
-			PQfinish(connection);
-
-			task->connection = NULL;
-			task->pollingStatus = 0;
-			task->isSocketReady = false;
-			task->state = CRON_TASK_DONE;
-
-			RunningTaskCount--;
-
 			break;
 		}
 
