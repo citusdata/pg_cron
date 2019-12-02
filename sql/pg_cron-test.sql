@@ -9,4 +9,7 @@ SELECT cron.schedule('0 10 * * *', 'VACUUM');
 -- Stop scheduling a job
 SELECT cron.unschedule(1);
 
+-- Invalid input: input too long
+SELECT cron.schedule(repeat('a', 1000), '');
+
 DROP EXTENSION pg_cron;

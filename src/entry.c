@@ -42,12 +42,13 @@ static int	set_element(bitstr_t *, int, int, int);
 
 
 void
-free_entry(e)
-	entry	*e;
+free_entry(entry *e)
 {
-	free(e->cmd);
+	if (e->cmd)
+		free(e->cmd);
 	free(e);
 }
+
 
 
 /* return NULL if eof or syntax error occurs;
@@ -74,15 +75,16 @@ parse_cron_entry(char *schedule)
 	 */
 
 	ecode_e	ecode = e_none;
-	entry *e = NULL;
+	entry *e = (entry *) calloc(sizeof(entry), sizeof(char));
 	int	ch = 0;
 	char cmd[MAX_COMMAND];
 	file_buffer buffer = {{},0,0,{},0};
 	FILE *file = (FILE *) &buffer;
 
-	int scheduleLength = strlen(schedule); 
+	int scheduleLength = strlen(schedule);
 	if (scheduleLength >= MAX_FILE_BUFFER_LENGTH)
 	{
+		ch = EOF;
 		ecode = e_cmd_len;
 		goto eof;
 	}
@@ -97,14 +99,15 @@ parse_cron_entry(char *schedule)
 
 	ch = get_char(file);
 	if (ch == EOF)
+	{
+		free_entry(e);
 		return NULL;
+	}
 
 	/* ch is now the first useful character of a useful line.
 	 * it may be an @special or it may be the first character
 	 * of a list of minutes.
 	 */
-
-	e = (entry *) calloc(sizeof(entry), sizeof(char));
 
 	if (ch == '@') {
 		/* all of these should be flagged and load-limited; i.e.,
@@ -128,7 +131,7 @@ parse_cron_entry(char *schedule)
 			bit_set(e->dom, 0);
 			bit_set(e->month, 0);
 			bit_nset(e->dow, 0, (LAST_DOW-FIRST_DOW+1));
-                        e->flags |= DOW_STAR; 
+                        e->flags |= DOW_STAR;
 		} else if (!strcmp("monthly", cmd)) {
 			bit_set(e->minute, 0);
 			bit_set(e->hour, 0);
@@ -219,7 +222,7 @@ parse_cron_entry(char *schedule)
 		}
 	}
 
-	/* make sundays equivilent */
+	/* make sundays equivalent */
 	if (bit_test(e->dow, 0) || bit_test(e->dow, 7)) {
 		bit_set(e->dow, 0);
 		bit_set(e->dow, 7);
@@ -231,9 +234,7 @@ parse_cron_entry(char *schedule)
 
  eof:
 	elog(LOG, "failed to parse entry %d", ecode);
-	if (e->cmd)
-		free(e->cmd);
-	free(e);
+	free_entry(e);
 	while (ch != EOF && ch != '\n')
 		ch = get_char(file);
 	return NULL;
@@ -260,7 +261,7 @@ get_list(bits, low, high, names, ch, file)
 
 	/* list = range {"," range}
 	 */
-	
+
 	/* clear the bit string, since the default is 'off'.
 	 */
 	bit_nclear(bits, 0, (high-low+1));
