@@ -17,6 +17,7 @@
 #include "pg_cron.h"
 #include "task_states.h"
 
+#include "access/hash.h"
 #include "utils/hsearch.h"
 #include "utils/memutils.h"
 

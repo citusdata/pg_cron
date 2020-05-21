@@ -19,6 +19,7 @@
 #include "cron_job.h"
 
 #include "access/genam.h"
+#include "access/hash.h"
 #include "access/heapam.h"
 #include "access/htup_details.h"
 #include "access/skey.h"
@@ -33,6 +34,7 @@
 #include "postmaster/postmaster.h"
 #include "pgstat.h"
 #include "storage/lock.h"
+#include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
 #include "utils/inval.h"
@@ -46,6 +48,10 @@
 #include "utils/varlena.h"
 #endif
 
+#if (PG_VERSION_NUM < 120000)
+#define table_open(r, l) heap_open(r, l)
+#define table_close(r, l) heap_close(r, l)
+#endif
 
 #define EXTENSION_NAME "pg_cron"
 #define CRON_SCHEMA_NAME "cron"
@@ -210,7 +216,7 @@ cron_schedule(PG_FUNCTION_ARGS)
 	cronJobsRelationId = get_relname_relid(JOBS_TABLE_NAME, cronSchemaId);
 
 	/* open jobs relation and insert new tuple */
-	cronJobsTable = heap_open(cronJobsRelationId, RowExclusiveLock);
+	cronJobsTable = table_open(cronJobsRelationId, RowExclusiveLock);
 
 	tupleDescriptor = RelationGetDescr(cronJobsTable);
 	heapTuple = heap_form_tuple(tupleDescriptor, values, isNulls);
@@ -224,7 +230,7 @@ cron_schedule(PG_FUNCTION_ARGS)
 	CommandCounterIncrement();
 
 	/* close relation and invalidate previous cache entry */
-	heap_close(cronJobsTable, NoLock);
+	table_close(cronJobsTable, NoLock);
 
 	InvalidateJobCache();
 
@@ -284,7 +290,7 @@ CronExtensionOwner(void)
 	Form_pg_extension extensionForm = NULL;
 	Oid extensionOwner = InvalidOid;
 
-	extensionRelation = heap_open(ExtensionRelationId, AccessShareLock);
+	extensionRelation = table_open(ExtensionRelationId, AccessShareLock);
 
 	ScanKeyInit(&entry[0],
 				Anum_pg_extension_extname,
@@ -305,7 +311,7 @@ CronExtensionOwner(void)
 	extensionOwner = extensionForm->extowner;
 
 	systable_endscan(scanDescriptor);
-	heap_close(extensionRelation, AccessShareLock);
+	table_close(extensionRelation, AccessShareLock);
 
 	return extensionOwner;
 }
@@ -338,7 +344,7 @@ cron_unschedule(PG_FUNCTION_ARGS)
 	cronSchemaId = get_namespace_oid(CRON_SCHEMA_NAME, false);
 	cronJobIndexId = get_relname_relid(JOB_ID_INDEX_NAME, cronSchemaId);
 
-	cronJobsTable = heap_open(CronJobRelationId(), RowExclusiveLock);
+	cronJobsTable = table_open(CronJobRelationId(), RowExclusiveLock);
 
 	ScanKeyInit(&scanKey[0], Anum_cron_job_jobid,
 				BTEqualStrategyNumber, F_INT8EQ, Int64GetDatum(jobId));
@@ -383,7 +389,7 @@ cron_unschedule(PG_FUNCTION_ARGS)
 	simple_heap_delete(cronJobsTable, &heapTuple->t_self);
 
 	systable_endscan(scanDescriptor);
-	heap_close(cronJobsTable, NoLock);
+	table_close(cronJobsTable, NoLock);
 
 	CommandCounterIncrement();
 	InvalidateJobCache();
@@ -498,7 +504,7 @@ LoadCronJobList(void)
 		return NIL;
 	}
 
-	cronJobTable = heap_open(CronJobRelationId(), AccessShareLock);
+	cronJobTable = table_open(CronJobRelationId(), AccessShareLock);
 
 	scanDescriptor = systable_beginscan(cronJobTable,
 										InvalidOid, false,
@@ -523,7 +529,7 @@ LoadCronJobList(void)
 	}
 
 	systable_endscan(scanDescriptor);
-	heap_close(cronJobTable, AccessShareLock);
+	table_close(cronJobTable, AccessShareLock);
 
 	PopActiveSnapshot();
 	CommitTransactionCommand();
