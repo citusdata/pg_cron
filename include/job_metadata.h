@@ -44,5 +44,11 @@ extern void ResetJobMetadataCache(void);
 extern List * LoadCronJobList(void);
 extern CronJob * GetCronJob(int64 jobId);
 
+extern bool InsertOrUpdateJobRunDetail(int64 runId, int64 *jobId, int32 *job_pid,
+									char *database, char *username, char *command,
+									char *status, char *return_message, TimestampTz *start_time,
+									TimestampTz *end_time);
+extern int64 NextRunId(void);
+extern void CleanAuditTable(void);
 
 #endif

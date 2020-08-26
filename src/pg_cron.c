@@ -78,10 +78,14 @@
 #include "tcop/pquery.h"
 #include "tcop/utility.h"
 #include "libpq/pqformat.h"
+#include "utils/builtins.h"
 
 
 PG_MODULE_MAGIC;
 
+#ifndef MAXINT8LEN
+#define MAXINT8LEN 20
+#endif
 
 /* Table-of-contents constants for our dynamic shared memory segment. */
 #define PG_CRON_MAGIC			0x51028080
@@ -134,12 +138,12 @@ static char* pg_cron_cmdTuples(char *msg);
 /* global settings */
 char *CronTableDatabaseName = "postgres";
 static bool CronLogStatement = true;
+static bool CronLogRun = true;
 
 /* flags set by signal handlers */
 static volatile sig_atomic_t got_sigterm = false;
 
 /* global variables */
-static int64 RunCount = 0; /* counter for assigning unique run IDs */
 static int CronTaskStartTimeout = 10000; /* maximum connection time */
 static const int MaxWait = 1000; /* maximum time in ms that poll() can block */
 static bool RebootJobsScheduled = false;
@@ -183,6 +187,16 @@ _PG_init(void)
 		gettext_noop("Log all cron statements prior to execution."),
 		NULL,
 		&CronLogStatement,
+		true,
+		PGC_POSTMASTER,
+		GUC_SUPERUSER_ONLY,
+		NULL, NULL, NULL);
+
+	DefineCustomBoolVariable(
+		"cron.log_run",
+		gettext_noop("Log all jobs runs into the job_run_details table"),
+		NULL,
+		&CronLogRun,
 		true,
 		PGC_POSTMASTER,
 		GUC_SUPERUSER_ONLY,
@@ -380,6 +394,12 @@ PgCronWorkerMain(Datum arg)
 
 	/* Make pg_cron recognisable in pg_stat_activity */
 	pgstat_report_appname("pg_cron scheduler");
+
+	/*
+	 * Mark anything that was in progress before the database restarted as
+	 * failed.
+	 */
+	CleanAuditTable();
 
 	/* Determine how many tasks we can run concurrently */
 	if (MaxConnections < MaxRunningTasks)
@@ -1005,6 +1025,8 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 	CronJob *cronJob = GetCronJob(jobId);
 	PGconn *connection = task->connection;
 	ConnStatusType connectionStatus = CONNECTION_BAD;
+	bool result;
+	TimestampTz start_time;
 
 	switch (checkState)
 	{
@@ -1023,7 +1045,6 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 				break;
 			}
 
-			task->runId = RunCount++;
 			task->pendingRunCount -= 1;
 			if (UseBackgroundWorkers)
 				task->state = CRON_TASK_BGW_START;
@@ -1031,6 +1052,23 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 				task->state = CRON_TASK_START;
 
 			RunningTaskCount++;
+
+			/* Add new entry to audit table. */
+			SetCurrentStatementStartTimestamp();
+			StartTransactionCommand();
+			PushActiveSnapshot(GetTransactionSnapshot());
+			task->runId = NextRunId();
+			PopActiveSnapshot();
+			CommitTransactionCommand();
+			if (CronLogRun)
+			{
+				result = InsertOrUpdateJobRunDetail(task->runId, &cronJob->jobId,
+												NULL, cronJob->database,
+												cronJob->userName,
+												cronJob->command, "starting",
+												NULL, NULL, NULL);
+				Assert(result);
+			}
 		}
 
 		case CRON_TASK_START:
@@ -1096,6 +1134,15 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 				task->connection = connection;
 				task->pollingStatus = PGRES_POLLING_WRITING;
 				task->state = CRON_TASK_CONNECTING;
+
+				if (CronLogRun)
+				{
+					result = InsertOrUpdateJobRunDetail(task->runId, NULL, NULL, NULL,
+												NULL, NULL, "connecting", NULL,
+												NULL, NULL);
+					Assert(result);
+				}
+
 				break;
 			}
 		}
@@ -1224,6 +1271,16 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 				break;
 			}
 
+			start_time = GetCurrentTimestamp();
+
+			if (CronLogRun)
+			{
+				result = InsertOrUpdateJobRunDetail(task->runId, NULL, &pid, NULL,
+												NULL, NULL, "running", NULL,
+												&start_time, NULL);
+				Assert(result);
+			}
+
 			task->state = CRON_TASK_BGW_RUNNING;
 			break;
 		}
@@ -1262,10 +1319,17 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 			pollingStatus = PQconnectPoll(connection);
 			if (pollingStatus == PGRES_POLLING_OK)
 			{
+				pid_t pid;
 				/* wait for socket to be ready to send a query */
 				task->pollingStatus = PGRES_POLLING_WRITING;
 
 				task->state = CRON_TASK_SENDING;
+
+				pid = (pid_t) PQbackendPID(connection);
+				if (CronLogRun)
+					result = InsertOrUpdateJobRunDetail(task->runId, NULL, &pid, NULL,
+													NULL, NULL, "sending", NULL,
+													NULL, NULL);
 			}
 			else if (pollingStatus == PGRES_POLLING_FAILED)
 			{
@@ -1328,6 +1392,15 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 				/* command is underway, stop using timeout */
 				task->startDeadline = 0;
 				task->state = CRON_TASK_RUNNING;
+
+				start_time = GetCurrentTimestamp();
+				if (CronLogRun)
+				{
+					result = InsertOrUpdateJobRunDetail(task->runId, NULL, NULL, NULL,
+													NULL, NULL, "running", NULL,
+													&start_time, NULL);
+					Assert(result);
+				}
 			}
 			else
 			{
@@ -1430,6 +1503,8 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 
 		case CRON_TASK_ERROR:
 		{
+			bool update_result;
+
 			if (connection != NULL)
 			{
 				PQfinish(connection);
@@ -1443,8 +1518,17 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 
 			if (task->errorMessage != NULL)
 			{
+				if (CronLogRun)
+				{
+					update_result = InsertOrUpdateJobRunDetail(task->runId, NULL, NULL, NULL,
+												NULL, NULL, "failed",
+												task->errorMessage, NULL, NULL);
+					Assert(update_result);
+				}
+
 				ereport(LOG, (errmsg("cron job " INT64_FORMAT " %s",
 									 jobId, task->errorMessage)));
+
 
 				if (task->freeErrorMessage)
 				{
@@ -1462,6 +1546,9 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 
 			RunningTaskCount--;
 
+			/* keep compiler quiet */
+			(void) update_result;
+
 			/* fall through to CRON_TASK_DONE */
 		}
 
@@ -1471,12 +1558,19 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 			InitializeCronTask(task, jobId);
 		}
 
+	/* keep compiler quiet */
+	(void) result;
 	}
 }
 
 static void
 GetTaskFeedback(shm_mq_handle *responseq, PGresult *result, CronTask *task)
 {
+
+	TimestampTz end_time;
+	bool update_result;
+
+	end_time = GetCurrentTimestamp();
 
 	if (responseq) {
 		Size            nbytes;
@@ -1502,6 +1596,15 @@ GetTaskFeedback(shm_mq_handle *responseq, PGresult *result, CronTask *task)
 				{
 					ErrorData	edata;
 					pq_parse_errornotice(&msg, &edata);
+
+					if (CronLogRun)
+					{
+						update_result = InsertOrUpdateJobRunDetail(task->runId, NULL, NULL, NULL,
+												NULL, NULL, "failed", edata.message,
+												NULL, &end_time);
+						Assert(update_result);
+					}
+
 					ereport(LOG, (errmsg("cron job " INT64_FORMAT " ERROR: %s",
 									 task->jobId, edata.message)));
 					break;
@@ -1510,6 +1613,15 @@ GetTaskFeedback(shm_mq_handle *responseq, PGresult *result, CronTask *task)
 				{
 					ErrorData	edata;
 					pq_parse_errornotice(&msg, &edata);
+
+					if (CronLogRun)
+					{
+						update_result = InsertOrUpdateJobRunDetail(task->runId, NULL, NULL, NULL,
+												NULL, NULL, "failed", edata.message,
+												NULL, &end_time);
+						Assert(update_result);
+					}
+
 					ereport(LOG, (errmsg("cron job " INT64_FORMAT " NOTICE: %s",
 									 task->jobId, edata.message)));
 					break;
@@ -1518,19 +1630,27 @@ GetTaskFeedback(shm_mq_handle *responseq, PGresult *result, CronTask *task)
 					break;
 			case 'C':
 				{
-					if (CronLogStatement)
+					const char  *tag = pq_getmsgstring(&msg);
+					char *nonconst_tag;
+					char *cmdTuples;
+
+					nonconst_tag = strdup(tag);
+
+					if (CronLogRun)
 					{
-						const char  *tag = pq_getmsgstring(&msg);
-						char *nonconst_tag;
-						char *cmdTuples;
+						update_result = InsertOrUpdateJobRunDetail(task->runId, NULL, NULL, NULL,
+												NULL, NULL, "succeeded", nonconst_tag,
+												NULL, &end_time);
+						Assert(update_result);
+					}
 
-						nonconst_tag = strdup(tag);
+					if (CronLogStatement) {
 						cmdTuples = pg_cron_cmdTuples(nonconst_tag);
-
 						ereport(LOG, (errmsg("cron job " INT64_FORMAT " COMMAND completed: %s %s",
 											 task->jobId, nonconst_tag, cmdTuples)));
-						free(nonconst_tag);
 					}
+
+					free(nonconst_tag);
 					break;
 				}
 			case 'A':
@@ -1552,16 +1672,25 @@ GetTaskFeedback(shm_mq_handle *responseq, PGresult *result, CronTask *task)
 			{
 				case PGRES_COMMAND_OK:
 				{
+					char *cmdStatus = PQcmdStatus(result);
+					char *cmdTuples = PQcmdTuples(result);
+
+					if (CronLogRun)
+					{
+
+						update_result = InsertOrUpdateJobRunDetail(task->runId, NULL, NULL, NULL,
+												NULL, NULL, "succeeded", cmdStatus,
+												NULL, &end_time);
+						Assert(update_result);
+					}
+
 					if (CronLogStatement)
 					{
-						char *cmdStatus = PQcmdStatus(result);
-						char *cmdTuples = PQcmdTuples(result);
-
 						ereport(LOG, (errmsg("cron job " INT64_FORMAT " COMMAND completed: %s %s",
 											 task->jobId, cmdStatus, cmdTuples)));
 					}
 
-				break;
+					break;
 				}
 
 				case PGRES_BAD_RESPONSE:
@@ -1571,6 +1700,15 @@ GetTaskFeedback(shm_mq_handle *responseq, PGresult *result, CronTask *task)
 					task->freeErrorMessage = true;
 					task->pollingStatus = 0;
 					task->state = CRON_TASK_ERROR;
+
+					if (CronLogRun)
+					{
+						update_result = InsertOrUpdateJobRunDetail(task->runId, NULL, NULL, NULL,
+												NULL, NULL, "failed", task->errorMessage,
+												NULL, &end_time);
+
+						Assert(update_result);
+					}
 
 					PQclear(result);
 
@@ -1586,6 +1724,15 @@ GetTaskFeedback(shm_mq_handle *responseq, PGresult *result, CronTask *task)
 					task->pollingStatus = 0;
 					task->state = CRON_TASK_ERROR;
 
+					if (CronLogRun)
+					{
+						update_result = InsertOrUpdateJobRunDetail(task->runId, NULL, NULL, NULL,
+												NULL, NULL, "failed", task->errorMessage,
+												NULL, &end_time);
+
+						Assert(update_result);
+					}
+
 					PQclear(result);
 
 					return;
@@ -1597,12 +1744,25 @@ GetTaskFeedback(shm_mq_handle *responseq, PGresult *result, CronTask *task)
 				case PGRES_NONFATAL_ERROR:
 				default:
 				{
+					int tupleCount = PQntuples(result);
+					char *rowString = ngettext("row", "rows",
+										   tupleCount);
+					char  rows[MAXINT8LEN + 1];
+					char  outputrows[MAXINT8LEN + 4 + 1];
+
+					pg_lltoa(tupleCount, rows);
+					snprintf(outputrows, sizeof(outputrows), "%s %s", rows, rowString);
+
+					if (CronLogRun)
+					{
+						update_result = InsertOrUpdateJobRunDetail(task->runId, NULL, NULL, NULL,
+												NULL, NULL, "succeeded", outputrows,
+												NULL, &end_time);
+						Assert(update_result);
+					}
+
 					if (CronLogStatement)
 					{
-						int tupleCount = PQntuples(result);
-						char *rowString = ngettext("row", "rows",
-											   tupleCount);
-
 						ereport(LOG, (errmsg("cron job " INT64_FORMAT " completed: "
 											 "%d %s",
 											 task->jobId, tupleCount,
@@ -1616,6 +1776,8 @@ GetTaskFeedback(shm_mq_handle *responseq, PGresult *result, CronTask *task)
 
 			PQclear(result);
 	}
+	/* keep compiler quiet */
+	(void) update_result;
 }
 
 /*
