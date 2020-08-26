@@ -58,6 +58,9 @@
 #define JOBS_TABLE_NAME "job"
 #define JOB_ID_INDEX_NAME "job_pkey"
 #define JOB_ID_SEQUENCE_NAME "cron.jobid_seq"
+#define JOB_RUN_DETAILS_TABLE_NAME "job_run_details"
+#define RUN_ID_SEQUENCE_NAME "cron.runid_seq"
+#define JOB_RUN_DETAILS_INDEX_NAME "job_run_details_pkey"
 
 
 /* forward declarations */
@@ -68,6 +71,7 @@ static Oid CronExtensionOwner(void);
 static void InvalidateJobCacheCallback(Datum argument, Oid relationId);
 static void InvalidateJobCache(void);
 static Oid CronJobRelationId(void);
+static Oid JobRunDetailsRelationId(void);
 
 static CronJob * TupleToCronJob(TupleDesc tupleDescriptor, HeapTuple heapTuple);
 static bool PgCronHasBeenLoaded(void);
@@ -85,6 +89,7 @@ static HTAB *CronJobHash = NULL;
 static Oid CachedCronJobRelationId = InvalidOid;
 bool CronJobCacheValid = false;
 char *CronHost = "localhost";
+static Oid CachedJobRunDetailsRelationId = InvalidOid;
 
 
 /*
@@ -275,6 +280,39 @@ NextJobId(void)
 	return jobId;
 }
 
+int64
+NextRunId(void)
+{
+	text *sequenceName = NULL;
+	Oid sequenceId = InvalidOid;
+	List *sequenceNameList = NIL;
+	RangeVar *sequenceVar = NULL;
+	Datum sequenceIdDatum = InvalidOid;
+	Oid savedUserId = InvalidOid;
+	int savedSecurityContext = 0;
+	Datum jobIdDatum = 0;
+	int64 jobId = 0;
+	bool failOK = true;
+
+	/* resolve relationId from passed in schema and relation name */
+	sequenceName = cstring_to_text(RUN_ID_SEQUENCE_NAME);
+	sequenceNameList = textToQualifiedNameList(sequenceName);
+	sequenceVar = makeRangeVarFromNameList(sequenceNameList);
+	sequenceId = RangeVarGetRelid(sequenceVar, NoLock, failOK);
+	sequenceIdDatum = ObjectIdGetDatum(sequenceId);
+
+	GetUserIdAndSecContext(&savedUserId, &savedSecurityContext);
+	SetUserIdAndSecContext(CronExtensionOwner(), SECURITY_LOCAL_USERID_CHANGE);
+
+	/* generate new and unique colocation id from sequence */
+	jobIdDatum = DirectFunctionCall1(nextval_oid, sequenceIdDatum);
+
+	SetUserIdAndSecContext(savedUserId, savedSecurityContext);
+
+	jobId = DatumGetInt64(jobIdDatum);
+
+	return jobId;
+}
 
 /*
  * CronExtensionOwner returns the name of the user that owns the
@@ -467,6 +505,18 @@ CronJobRelationId(void)
 	return CachedCronJobRelationId;
 }
 
+static Oid
+JobRunDetailsRelationId(void)
+{
+	if (CachedJobRunDetailsRelationId == InvalidOid)
+	{
+		Oid cronSchemaId = get_namespace_oid(CRON_SCHEMA_NAME, false);
+
+		CachedJobRunDetailsRelationId = get_relname_relid(JOB_RUN_DETAILS_TABLE_NAME, cronSchemaId);
+	}
+
+	return CachedJobRunDetailsRelationId;
+}
 
 /*
  * LoadCronJobList loads the current list of jobs from the
@@ -649,4 +699,239 @@ PgCronHasBeenLoaded(void)
 	extensionLoaded = extensionPresent && extensionScriptExecuted;
 
 	return extensionLoaded;
+}
+
+bool
+InsertOrUpdateJobRunDetail(int64 runId, int64 *jobId, int32 *job_pid,
+								char *database, char *username, char *command,
+								char *status, char *return_message, TimestampTz *start_time,
+								TimestampTz *end_time)
+{
+	Relation jobRunDetailTable;
+	SysScanDesc scanDescriptor;
+	ScanKeyData scanKey[1];
+	HeapTuple heapTuple;
+	TupleDesc tupleDescriptor;
+	Datum values[Natts_job_run_details];
+	bool isNulls[Natts_job_run_details];
+	bool repl[Natts_job_run_details];
+	Oid schemaId;
+	Oid indexId;
+
+	SetCurrentStatementStartTimestamp();
+	StartTransactionCommand();
+	PushActiveSnapshot(GetTransactionSnapshot());
+
+	/*
+	 * If the pg_job_scheduler extension has not been created yet or
+	 * we are on a hot standby, the job table is treated as
+	 * being empty.
+	 */
+	if (!PgCronHasBeenLoaded() || RecoveryInProgress())
+	{
+		PopActiveSnapshot();
+		CommitTransactionCommand();
+		pgstat_report_activity(STATE_IDLE, NULL);
+		return false;
+	}
+
+	memset(values, 0, sizeof(values));
+	memset(isNulls, false, sizeof(isNulls));
+	memset(repl, false, sizeof(repl));
+
+	values[Anum_job_run_details_runid - 1] = Int64GetDatum(runId);
+
+	if (jobId == NULL)
+		isNulls[Anum_job_run_details_jobid - 1] = true;
+	else
+	{
+		values[Anum_job_run_details_jobid - 1] = Int64GetDatum(*jobId);
+		repl[Anum_job_run_details_jobid - 1] = true;
+	}
+
+	if (job_pid == NULL)
+		isNulls[Anum_job_run_details_job_pid - 1] = true;
+	else
+	{
+		values[Anum_job_run_details_job_pid - 1] = Int32GetDatum(*job_pid);
+		repl[Anum_job_run_details_job_pid - 1] = true;
+	}
+
+	if (database == NULL)
+		isNulls[Anum_job_run_details_database - 1] = true;
+	else
+	{
+		values[Anum_job_run_details_database - 1] = CStringGetTextDatum(database);
+		repl[Anum_job_run_details_database - 1] = true;
+	}
+
+	if (username == NULL)
+		isNulls[Anum_job_run_details_username - 1] = true;
+	else
+	{
+		values[Anum_job_run_details_username - 1] = CStringGetTextDatum(username);
+		repl[Anum_job_run_details_username - 1] = true;
+	}
+
+	if (command == NULL)
+		isNulls[Anum_job_run_details_command - 1] = true;
+	else
+	{
+		values[Anum_job_run_details_command - 1] = CStringGetTextDatum(command);
+		repl[Anum_job_run_details_command - 1] = true;
+	}
+
+	if (status == NULL)
+		isNulls[Anum_job_run_details_status - 1] = true;
+	else
+	{
+		values[Anum_job_run_details_status - 1] = CStringGetTextDatum(status);
+		repl[Anum_job_run_details_status - 1] = true;
+	}
+
+	if (return_message == NULL)
+		isNulls[Anum_job_run_details_return_message - 1] = true;
+	else
+	{
+		values[Anum_job_run_details_return_message - 1] = CStringGetTextDatum(return_message);
+		repl[Anum_job_run_details_return_message - 1] = true;
+	}
+
+	if (start_time == NULL)
+		isNulls[Anum_job_run_details_start_time - 1] = true;
+	else
+	{
+		values[Anum_job_run_details_start_time - 1] = TimestampTzGetDatum(*start_time);
+		repl[Anum_job_run_details_start_time - 1] = true;
+	}
+
+	if (end_time == NULL)
+		isNulls[Anum_job_run_details_end_time - 1] = true;
+	else
+	{
+		values[Anum_job_run_details_end_time - 1] = TimestampTzGetDatum(*end_time);
+		repl[Anum_job_run_details_end_time - 1] = true;
+	}
+
+	schemaId = get_namespace_oid(CRON_SCHEMA_NAME, false);
+	indexId = get_relname_relid(JOB_RUN_DETAILS_INDEX_NAME, schemaId);
+
+	jobRunDetailTable = table_open(JobRunDetailsRelationId(), RowExclusiveLock);
+
+	ScanKeyInit(&scanKey[0], Anum_job_run_details_runid,
+							BTEqualStrategyNumber, F_INT8EQ, Int64GetDatum(runId));
+
+	scanDescriptor = systable_beginscan(jobRunDetailTable, indexId, true,
+									NULL, 1, scanKey);
+
+	tupleDescriptor = RelationGetDescr(jobRunDetailTable);
+
+	heapTuple = systable_getnext(scanDescriptor);
+	if (!HeapTupleIsValid(heapTuple))
+	{
+		heapTuple = heap_form_tuple(tupleDescriptor, values, isNulls);
+		#if PG_VERSION_NUM < 100000
+			simple_heap_insert(jobRunDetailTable, heapTuple);
+			CatalogUpdateIndexes(jobRunDetailTable, heapTuple);
+		#else
+			CatalogTupleInsert(jobRunDetailTable, heapTuple);
+		#endif
+		heap_freetuple(heapTuple);
+	}
+	else
+	{
+		HeapTuple newtuple;
+
+		newtuple = heap_modify_tuple(heapTuple, tupleDescriptor, values, isNulls, repl);
+		#if PG_VERSION_NUM < 100000
+			simple_heap_update(jobRunDetailTable, &newtuple->t_self, newtuple);
+			CatalogUpdateIndexes(jobRunDetailTable, newtuple);
+		#else
+			CatalogTupleUpdate(jobRunDetailTable, &newtuple->t_self, newtuple);
+		#endif
+		heap_freetuple(newtuple);
+	}
+
+	systable_endscan(scanDescriptor);
+	table_close(jobRunDetailTable, NoLock);
+
+	PopActiveSnapshot();
+	CommitTransactionCommand();
+
+	return true;
+}
+
+void
+CleanAuditTable(void)
+{
+	Relation jobRunDetailTable;
+	SysScanDesc scanDescriptor;
+	HeapTuple heapTuple;
+	TupleDesc tupleDescriptor;
+	Datum values[Natts_job_run_details];
+	bool isNulls[Natts_job_run_details];
+	bool repl[Natts_job_run_details];
+
+	SetCurrentStatementStartTimestamp();
+	StartTransactionCommand();
+	PushActiveSnapshot(GetTransactionSnapshot());
+
+	/*
+	 * If the pg_job_scheduler extension has not been created yet or
+	 * we are on a hot standby, the job table is treated as
+	 * being empty.
+	 */
+	if (!PgCronHasBeenLoaded() || RecoveryInProgress())
+	{
+		PopActiveSnapshot();
+		CommitTransactionCommand();
+		pgstat_report_activity(STATE_IDLE, NULL);
+		return;
+	}
+
+	memset(values, 0, sizeof(values));
+	memset(isNulls, false, sizeof(isNulls));
+	memset(repl, false, sizeof(repl));
+
+	values[Anum_job_run_details_status - 1] = CStringGetTextDatum("failed");
+	repl[Anum_job_run_details_status - 1] = true;
+
+	values[Anum_job_run_details_return_message - 1] = CStringGetTextDatum("server restarted");
+	repl[Anum_job_run_details_return_message - 1] = true;
+
+	get_namespace_oid(CRON_SCHEMA_NAME, false);
+	jobRunDetailTable = table_open(JobRunDetailsRelationId(), RowExclusiveLock);
+
+	scanDescriptor = systable_beginscan(jobRunDetailTable, InvalidOid, false,
+                                                                              NULL, 0, NULL);
+	tupleDescriptor = RelationGetDescr(jobRunDetailTable);
+
+	while (HeapTupleIsValid(heapTuple = systable_getnext(scanDescriptor)))
+	{
+		HeapTuple newtuple;
+		Datum status;
+		bool isNull;
+
+		status = heap_getattr(heapTuple, Anum_job_run_details_status, tupleDescriptor, &isNull);
+
+		if (!isNull &&
+			strcmp("starting", TextDatumGetCString(status)) != 0 &&
+			strcmp("running", TextDatumGetCString(status)) != 0)
+			continue;
+
+		newtuple = heap_modify_tuple(heapTuple, tupleDescriptor, values, isNulls, repl);
+		#if PG_VERSION_NUM < 100000
+			simple_heap_update(jobRunDetailTable, &newtuple->t_self, newtuple);
+			CatalogUpdateIndexes(jobRunDetailTable, newtuple);
+		#else
+			CatalogTupleUpdate(jobRunDetailTable, &newtuple->t_self, newtuple);
+		#endif
+		heap_freetuple(newtuple);
+	}
+
+	systable_endscan(scanDescriptor);
+	table_close(jobRunDetailTable, NoLock);
+
+	PopActiveSnapshot();
+	CommitTransactionCommand();
 }
