@@ -3,6 +3,9 @@
  * src/pg_cron.c
  *
  * Implementation of the pg_cron task scheduler.
+ * Wording:
+ *	   - A job is a scheduling definition of a task
+ *	   - A task is what is actually executed within the database engine
  *
  * Copyright (c) 2016, Citus Data, Inc.
  *
