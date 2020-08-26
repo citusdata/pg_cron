@@ -13,6 +13,9 @@
 
 
 #include "nodes/pg_list.h"
+#if (PG_VERSION_NUM < 120000)
+#include "datatype/timestamp.h"
+#endif
 
 
 /* job metadata data structure */
