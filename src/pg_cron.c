@@ -113,7 +113,7 @@ void _PG_fini(void);
 static void pg_cron_sigterm(SIGNAL_ARGS);
 static void pg_cron_sighup(SIGNAL_ARGS);
 static void pg_cron_background_worker_sigterm(SIGNAL_ARGS);
-void PgCronWorkerMain(Datum arg);
+void PgCronLauncherMain(Datum arg);
 void CronBackgroundWorker(Datum arg);
 
 static void StartAllPendingRuns(List *taskList, TimestampTz currentTime);
@@ -242,15 +242,15 @@ _PG_init(void)
 	worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
 	worker.bgw_restart_time = 1;
 #if (PG_VERSION_NUM < 100000)
-	worker.bgw_main = PgCronWorkerMain;
+	worker.bgw_main = PgCronLauncherMain;
 #endif
 	worker.bgw_main_arg = Int32GetDatum(0);
 	worker.bgw_notify_pid = 0;
 	sprintf(worker.bgw_library_name, "pg_cron");
-	sprintf(worker.bgw_function_name, "PgCronWorkerMain");
-	snprintf(worker.bgw_name, BGW_MAXLEN, "pg_cron scheduler");
+	sprintf(worker.bgw_function_name, "PgCronLauncherMain");
+	snprintf(worker.bgw_name, BGW_MAXLEN, "pg_cron launcher");
 #if (PG_VERSION_NUM >= 110000)
-	snprintf(worker.bgw_type, BGW_MAXLEN, "pg_cron scheduler");
+	snprintf(worker.bgw_type, BGW_MAXLEN, "pg_cron launcher");
 #endif
 
 	RegisterBackgroundWorker(&worker);
@@ -371,11 +371,11 @@ pg_cron_background_worker_sigterm(SIGNAL_ARGS)
 
 
 /*
- * PgCronWorkerMain is the main entry-point for the background worker
+ * PgCronLauncherMain is the main entry-point for the background worker
  * that performs tasks.
  */
 void
-PgCronWorkerMain(Datum arg)
+PgCronLauncherMain(Datum arg)
 {
 	MemoryContext CronLoopContext = NULL;
 	struct rlimit limit;
