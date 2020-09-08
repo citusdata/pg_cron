@@ -48,6 +48,9 @@
 #include "utils/varlena.h"
 #endif
 
+#include "executor/spi.h"
+#include "catalog/pg_type.h"
+
 #if (PG_VERSION_NUM < 120000)
 #define table_open(r, l) heap_open(r, l)
 #define table_close(r, l) heap_close(r, l)
@@ -60,7 +63,7 @@
 #define JOB_ID_SEQUENCE_NAME "cron.jobid_seq"
 #define JOB_RUN_DETAILS_TABLE_NAME "job_run_details"
 #define RUN_ID_SEQUENCE_NAME "cron.runid_seq"
-#define JOB_RUN_DETAILS_INDEX_NAME "job_run_details_pkey"
+#define MAX_NUMBER_SPI_EXEC_ARGS 6
 
 
 /* forward declarations */
@@ -71,7 +74,6 @@ static Oid CronExtensionOwner(void);
 static void InvalidateJobCacheCallback(Datum argument, Oid relationId);
 static void InvalidateJobCache(void);
 static Oid CronJobRelationId(void);
-static Oid JobRunDetailsRelationId(void);
 
 static CronJob * TupleToCronJob(TupleDesc tupleDescriptor, HeapTuple heapTuple);
 static bool PgCronHasBeenLoaded(void);
@@ -89,7 +91,6 @@ static HTAB *CronJobHash = NULL;
 static Oid CachedCronJobRelationId = InvalidOid;
 bool CronJobCacheValid = false;
 char *CronHost = "localhost";
-static Oid CachedJobRunDetailsRelationId = InvalidOid;
 
 
 /*
@@ -293,6 +294,10 @@ NextRunId(void)
 	Datum jobIdDatum = 0;
 	int64 jobId = 0;
 	bool failOK = true;
+
+	SetCurrentStatementStartTimestamp();
+	StartTransactionCommand();
+	PushActiveSnapshot(GetTransactionSnapshot());
 
 	/* resolve relationId from passed in schema and relation name */
 	sequenceName = cstring_to_text(RUN_ID_SEQUENCE_NAME);
@@ -505,19 +510,6 @@ CronJobRelationId(void)
 	return CachedCronJobRelationId;
 }
 
-static Oid
-JobRunDetailsRelationId(void)
-{
-	if (CachedJobRunDetailsRelationId == InvalidOid)
-	{
-		Oid cronSchemaId = get_namespace_oid(CRON_SCHEMA_NAME, false);
-
-		CachedJobRunDetailsRelationId = get_relname_relid(JOB_RUN_DETAILS_TABLE_NAME, cronSchemaId);
-	}
-
-	return CachedJobRunDetailsRelationId;
-}
-
 /*
  * LoadCronJobList loads the current list of jobs from the
  * cron.job table and adds each job to the CronJobHash.
@@ -701,237 +693,244 @@ PgCronHasBeenLoaded(void)
 	return extensionLoaded;
 }
 
-bool
-InsertOrUpdateJobRunDetail(int64 runId, int64 *jobId, int32 *job_pid,
-								char *database, char *username, char *command,
-								char *status, char *return_message, TimestampTz *start_time,
-								TimestampTz *end_time)
-{
-	Relation jobRunDetailTable;
-	SysScanDesc scanDescriptor;
-	ScanKeyData scanKey[1];
-	HeapTuple heapTuple;
-	TupleDesc tupleDescriptor;
-	Datum values[Natts_job_run_details];
-	bool isNulls[Natts_job_run_details];
-	bool repl[Natts_job_run_details];
-	Oid schemaId;
-	Oid indexId;
-
-	SetCurrentStatementStartTimestamp();
-	StartTransactionCommand();
-	PushActiveSnapshot(GetTransactionSnapshot());
-
-	/*
-	 * If the pg_job_scheduler extension has not been created yet or
-	 * we are on a hot standby, the job table is treated as
-	 * being empty.
-	 */
-	if (!PgCronHasBeenLoaded() || RecoveryInProgress())
-	{
-		PopActiveSnapshot();
-		CommitTransactionCommand();
-		pgstat_report_activity(STATE_IDLE, NULL);
-		return false;
-	}
-
-	memset(values, 0, sizeof(values));
-	memset(isNulls, false, sizeof(isNulls));
-	memset(repl, false, sizeof(repl));
-
-	values[Anum_job_run_details_runid - 1] = Int64GetDatum(runId);
-
-	if (jobId == NULL)
-		isNulls[Anum_job_run_details_jobid - 1] = true;
-	else
-	{
-		values[Anum_job_run_details_jobid - 1] = Int64GetDatum(*jobId);
-		repl[Anum_job_run_details_jobid - 1] = true;
-	}
-
-	if (job_pid == NULL)
-		isNulls[Anum_job_run_details_job_pid - 1] = true;
-	else
-	{
-		values[Anum_job_run_details_job_pid - 1] = Int32GetDatum(*job_pid);
-		repl[Anum_job_run_details_job_pid - 1] = true;
-	}
-
-	if (database == NULL)
-		isNulls[Anum_job_run_details_database - 1] = true;
-	else
-	{
-		values[Anum_job_run_details_database - 1] = CStringGetTextDatum(database);
-		repl[Anum_job_run_details_database - 1] = true;
-	}
-
-	if (username == NULL)
-		isNulls[Anum_job_run_details_username - 1] = true;
-	else
-	{
-		values[Anum_job_run_details_username - 1] = CStringGetTextDatum(username);
-		repl[Anum_job_run_details_username - 1] = true;
-	}
-
-	if (command == NULL)
-		isNulls[Anum_job_run_details_command - 1] = true;
-	else
-	{
-		values[Anum_job_run_details_command - 1] = CStringGetTextDatum(command);
-		repl[Anum_job_run_details_command - 1] = true;
-	}
-
-	if (status == NULL)
-		isNulls[Anum_job_run_details_status - 1] = true;
-	else
-	{
-		values[Anum_job_run_details_status - 1] = CStringGetTextDatum(status);
-		repl[Anum_job_run_details_status - 1] = true;
-	}
-
-	if (return_message == NULL)
-		isNulls[Anum_job_run_details_return_message - 1] = true;
-	else
-	{
-		values[Anum_job_run_details_return_message - 1] = CStringGetTextDatum(return_message);
-		repl[Anum_job_run_details_return_message - 1] = true;
-	}
-
-	if (start_time == NULL)
-		isNulls[Anum_job_run_details_start_time - 1] = true;
-	else
-	{
-		values[Anum_job_run_details_start_time - 1] = TimestampTzGetDatum(*start_time);
-		repl[Anum_job_run_details_start_time - 1] = true;
-	}
-
-	if (end_time == NULL)
-		isNulls[Anum_job_run_details_end_time - 1] = true;
-	else
-	{
-		values[Anum_job_run_details_end_time - 1] = TimestampTzGetDatum(*end_time);
-		repl[Anum_job_run_details_end_time - 1] = true;
-	}
-
-	schemaId = get_namespace_oid(CRON_SCHEMA_NAME, false);
-	indexId = get_relname_relid(JOB_RUN_DETAILS_INDEX_NAME, schemaId);
-
-	jobRunDetailTable = table_open(JobRunDetailsRelationId(), RowExclusiveLock);
-
-	ScanKeyInit(&scanKey[0], Anum_job_run_details_runid,
-							BTEqualStrategyNumber, F_INT8EQ, Int64GetDatum(runId));
-
-	scanDescriptor = systable_beginscan(jobRunDetailTable, indexId, true,
-									NULL, 1, scanKey);
-
-	tupleDescriptor = RelationGetDescr(jobRunDetailTable);
-
-	heapTuple = systable_getnext(scanDescriptor);
-	if (!HeapTupleIsValid(heapTuple))
-	{
-		heapTuple = heap_form_tuple(tupleDescriptor, values, isNulls);
-		#if PG_VERSION_NUM < 100000
-			simple_heap_insert(jobRunDetailTable, heapTuple);
-			CatalogUpdateIndexes(jobRunDetailTable, heapTuple);
-		#else
-			CatalogTupleInsert(jobRunDetailTable, heapTuple);
-		#endif
-		heap_freetuple(heapTuple);
-	}
-	else
-	{
-		HeapTuple newtuple;
-
-		newtuple = heap_modify_tuple(heapTuple, tupleDescriptor, values, isNulls, repl);
-		#if PG_VERSION_NUM < 100000
-			simple_heap_update(jobRunDetailTable, &newtuple->t_self, newtuple);
-			CatalogUpdateIndexes(jobRunDetailTable, newtuple);
-		#else
-			CatalogTupleUpdate(jobRunDetailTable, &newtuple->t_self, newtuple);
-		#endif
-		heap_freetuple(newtuple);
-	}
-
-	systable_endscan(scanDescriptor);
-	table_close(jobRunDetailTable, NoLock);
-
-	PopActiveSnapshot();
-	CommitTransactionCommand();
-
-	return true;
-}
-
 void
-CleanAuditTable(void)
+InsertJobRunDetail(int64 runId, int64 *jobId, char *database, char *username, char *command, char *status)
 {
-	Relation jobRunDetailTable;
-	SysScanDesc scanDescriptor;
-	HeapTuple heapTuple;
-	TupleDesc tupleDescriptor;
-	Datum values[Natts_job_run_details];
-	bool isNulls[Natts_job_run_details];
-	bool repl[Natts_job_run_details];
+	StringInfoData querybuf;
+	Oid argTypes[MAX_NUMBER_SPI_EXEC_ARGS];
+	Datum argValues[MAX_NUMBER_SPI_EXEC_ARGS];
 
 	SetCurrentStatementStartTimestamp();
 	StartTransactionCommand();
 	PushActiveSnapshot(GetTransactionSnapshot());
 
-	/*
-	 * If the pg_job_scheduler extension has not been created yet or
-	 * we are on a hot standby, the job table is treated as
-	 * being empty.
-	 */
 	if (!PgCronHasBeenLoaded() || RecoveryInProgress())
 	{
 		PopActiveSnapshot();
 		CommitTransactionCommand();
-		pgstat_report_activity(STATE_IDLE, NULL);
+		ereport(LOG,(errmsg("pg_cron not loaded/present or recovery in progress")));
 		return;
 	}
 
-	memset(values, 0, sizeof(values));
-	memset(isNulls, false, sizeof(isNulls));
-	memset(repl, false, sizeof(repl));
+	initStringInfo(&querybuf);
 
-	values[Anum_job_run_details_status - 1] = CStringGetTextDatum("failed");
-	repl[Anum_job_run_details_status - 1] = true;
+	/* Open SPI context. */
+	if (SPI_connect() != SPI_OK_CONNECT)
+		elog(ERROR, "SPI_connect failed");
 
-	values[Anum_job_run_details_return_message - 1] = CStringGetTextDatum("server restarted");
-	repl[Anum_job_run_details_return_message - 1] = true;
 
-	get_namespace_oid(CRON_SCHEMA_NAME, false);
-	jobRunDetailTable = table_open(JobRunDetailsRelationId(), RowExclusiveLock);
+	appendStringInfo(&querybuf,
+		"insert into %s.%s (jobid, runid, database, username, command, status) values ($1,$2,$3,$4,$5,$6)",
+		CRON_SCHEMA_NAME, JOB_RUN_DETAILS_TABLE_NAME);
 
-	scanDescriptor = systable_beginscan(jobRunDetailTable, InvalidOid, false,
-                                                                              NULL, 0, NULL);
-	tupleDescriptor = RelationGetDescr(jobRunDetailTable);
+	/* jobId */
+	argTypes[0] = INT8OID;
+	argValues[0] = Int64GetDatum(*jobId);
 
-	while (HeapTupleIsValid(heapTuple = systable_getnext(scanDescriptor)))
-	{
-		HeapTuple newtuple;
-		Datum status;
-		bool isNull;
+	/* runId */
+	argTypes[1] = INT8OID;
+	argValues[1] = Int64GetDatum(runId);
 
-		status = heap_getattr(heapTuple, Anum_job_run_details_status, tupleDescriptor, &isNull);
+	/* database */
+	argTypes[2] = TEXTOID;
+	argValues[2] = CStringGetTextDatum(database);
 
-		if (!isNull &&
-			strcmp("starting", TextDatumGetCString(status)) != 0 &&
-			strcmp("running", TextDatumGetCString(status)) != 0)
-			continue;
+	/* username */
+	argTypes[3] = TEXTOID;
+	argValues[3] = CStringGetTextDatum(username);
 
-		newtuple = heap_modify_tuple(heapTuple, tupleDescriptor, values, isNulls, repl);
-		#if PG_VERSION_NUM < 100000
-			simple_heap_update(jobRunDetailTable, &newtuple->t_self, newtuple);
-			CatalogUpdateIndexes(jobRunDetailTable, newtuple);
-		#else
-			CatalogTupleUpdate(jobRunDetailTable, &newtuple->t_self, newtuple);
-		#endif
-		heap_freetuple(newtuple);
-	}
+	/* command */
+	argTypes[4] = TEXTOID;
+	argValues[4] = CStringGetTextDatum(command);
 
-	systable_endscan(scanDescriptor);
-	table_close(jobRunDetailTable, NoLock);
+	/* status */
+	argTypes[5] = TEXTOID;
+	argValues[5] = CStringGetTextDatum(status);
 
+	pgstat_report_activity(STATE_RUNNING, querybuf.data);
+
+	if(SPI_execute_with_args(querybuf.data,
+		MAX_NUMBER_SPI_EXEC_ARGS, argTypes, argValues, NULL, false, 1) != SPI_OK_INSERT)
+		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
+
+	pfree(querybuf.data);
+
+	SPI_finish();
 	PopActiveSnapshot();
 	CommitTransactionCommand();
+	pgstat_report_activity(STATE_IDLE, NULL);
+}
+
+void
+UpdateJobRunDetail(int64 runId, int32 *job_pid, char *status, char *return_message, TimestampTz *start_time,
+                                                                        TimestampTz *end_time)
+{
+	StringInfoData querybuf;
+	Oid argTypes[MAX_NUMBER_SPI_EXEC_ARGS];
+	Datum argValues[MAX_NUMBER_SPI_EXEC_ARGS];
+	int i;
+
+	SetCurrentStatementStartTimestamp();
+	StartTransactionCommand();
+	PushActiveSnapshot(GetTransactionSnapshot());
+
+	if (!PgCronHasBeenLoaded() || RecoveryInProgress())
+	{
+		PopActiveSnapshot();
+		CommitTransactionCommand();
+		ereport(LOG,(errmsg("pg_cron not loaded/present or recovery in progress")));
+		return;
+	}
+
+	initStringInfo(&querybuf);
+	i = 0;
+
+	/* Open SPI context. */
+	if (SPI_connect() != SPI_OK_CONNECT)
+		elog(ERROR, "SPI_connect failed");
+
+
+	appendStringInfo(&querybuf,
+		"update %s.%s set", CRON_SCHEMA_NAME, JOB_RUN_DETAILS_TABLE_NAME);
+
+
+	/* add the fields to be updated */
+	if (job_pid != NULL) {
+		argTypes[i] = INT4OID;
+		argValues[i] = Int32GetDatum(*job_pid);
+		i++;
+		appendStringInfo(&querybuf, " job_pid = $%d,", i);
+	}
+
+	if (status != NULL)
+	{
+		argTypes[i] = TEXTOID;
+		argValues[i] = CStringGetTextDatum(status);
+		i++;
+
+		appendStringInfo(&querybuf, " status = $%d,", i);
+	}
+
+        if (return_message != NULL)
+	{
+		argTypes[i] = TEXTOID;
+		argValues[i] = CStringGetTextDatum(return_message);
+		i++;
+
+		appendStringInfo(&querybuf, " return_message = $%d,", i);
+	}
+
+        if (start_time != NULL)
+	{
+		argTypes[i] = TIMESTAMPTZOID;
+		argValues[i] = TimestampTzGetDatum(*start_time);
+		i++;
+
+		appendStringInfo(&querybuf, " start_time = $%d,", i);
+	}
+
+        if (end_time != NULL)
+	{
+		argTypes[i] = TIMESTAMPTZOID;
+		argValues[i] = TimestampTzGetDatum(*end_time);
+		i++;
+
+		appendStringInfo(&querybuf, " end_time = $%d,", i);
+	}
+
+	argTypes[i] = INT8OID;
+	argValues[i] = Int64GetDatum(runId);
+	i++;
+
+	/* remove the last comma */
+	querybuf.len--;
+	querybuf.data[querybuf.len] = '\0';
+
+	/* and add the where clause */
+	appendStringInfo(&querybuf, " where runid = $%d", i);
+
+	pgstat_report_activity(STATE_RUNNING, querybuf.data);
+
+	if(SPI_execute_with_args(querybuf.data,
+		i, argTypes, argValues, NULL, false, 1) != SPI_OK_UPDATE)
+		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
+
+	pfree(querybuf.data);
+
+	SPI_finish();
+	PopActiveSnapshot();
+	CommitTransactionCommand();
+	pgstat_report_activity(STATE_IDLE, NULL);
+}
+
+void
+MarkPendingRunsAsFailed(void)
+{
+	StringInfoData querybuf;
+
+	SetCurrentStatementStartTimestamp();
+	StartTransactionCommand();
+	PushActiveSnapshot(GetTransactionSnapshot());
+
+	if (!PgCronHasBeenLoaded() || RecoveryInProgress())
+	{
+		PopActiveSnapshot();
+		CommitTransactionCommand();
+		return;
+	}
+
+	initStringInfo(&querybuf);
+
+	/* Open SPI context. */
+	if (SPI_connect() != SPI_OK_CONNECT)
+		elog(ERROR, "SPI_connect failed");
+
+
+	appendStringInfo(&querybuf,
+		"update %s.%s set status = '%s', return_message = 'server restarted' where status in ('%s','%s')"
+		, CRON_SCHEMA_NAME, JOB_RUN_DETAILS_TABLE_NAME, GetCronStatus(CRON_STATUS_FAILED), GetCronStatus(CRON_STATUS_STARTING), GetCronStatus(CRON_STATUS_RUNNING));
+
+
+	pgstat_report_activity(STATE_RUNNING, querybuf.data);
+
+	if (SPI_exec(querybuf.data, 0) != SPI_OK_UPDATE)
+		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
+
+	pfree(querybuf.data);
+
+	SPI_finish();
+	PopActiveSnapshot();
+	CommitTransactionCommand();
+	pgstat_report_activity(STATE_IDLE, NULL);
+}
+
+char *
+GetCronStatus(CronStatus cronstatus)
+{
+	char *statusDesc = "unknown status";
+
+	switch (cronstatus)
+	{
+	case CRON_STATUS_STARTING:
+		statusDesc = "starting";
+		break;
+	case CRON_STATUS_RUNNING:
+		statusDesc = "running";
+		break;
+	case CRON_STATUS_SENDING:
+		statusDesc = "sending";
+		break;
+	case CRON_STATUS_CONNECTING:
+		statusDesc = "connecting";
+		break;
+	case CRON_STATUS_SUCCEEDED:
+		statusDesc = "succeeded";
+		break;
+	case CRON_STATUS_FAILED:
+		statusDesc = "failed";
+		break;
+	default:
+		break;
+	}
+	return statusDesc;
 }

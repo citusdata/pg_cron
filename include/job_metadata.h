@@ -17,6 +17,15 @@
 #include "datatype/timestamp.h"
 #endif
 
+typedef enum
+{
+	CRON_STATUS_STARTING,
+	CRON_STATUS_RUNNING,
+	CRON_STATUS_SENDING,
+	CRON_STATUS_CONNECTING,
+	CRON_STATUS_SUCCEEDED,
+	CRON_STATUS_FAILED
+} CronStatus;
 
 /* job metadata data structure */
 typedef struct CronJob
@@ -44,11 +53,11 @@ extern void ResetJobMetadataCache(void);
 extern List * LoadCronJobList(void);
 extern CronJob * GetCronJob(int64 jobId);
 
-extern bool InsertOrUpdateJobRunDetail(int64 runId, int64 *jobId, int32 *job_pid,
-									char *database, char *username, char *command,
-									char *status, char *return_message, TimestampTz *start_time,
+extern void InsertJobRunDetail(int64 runId, int64 *jobId, char *database, char *username, char *command, char *status);
+extern void UpdateJobRunDetail(int64 runId, int32 *job_pid, char *status, char *return_message, TimestampTz *start_time,
 									TimestampTz *end_time);
 extern int64 NextRunId(void);
-extern void CleanAuditTable(void);
+extern void MarkPendingRunsAsFailed(void);
+extern char *GetCronStatus(CronStatus cronstatus);
 
 #endif
