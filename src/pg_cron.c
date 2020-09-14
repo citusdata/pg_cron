@@ -1997,7 +1997,7 @@ ExecuteSqlString(const char *sql)
 		#if PG_VERSION_NUM < 130000
 			set_ps_display(commandTag, false);
 		#else
-			set_ps_display(GetCommandTagName(commandTag), false);
+			set_ps_display(GetCommandTagName(commandTag));
 		#endif
 
 		BeginCommand(commandTag, DestNone);
@@ -2023,7 +2023,11 @@ ExecuteSqlString(const char *sql)
 			querytree_list = pg_analyze_and_rewrite(parsetree, sql, NULL, 0);
 		#endif
 
-		plantree_list = pg_plan_queries(querytree_list, 0, NULL);
+		#if PG_VERSION_NUM < 130000
+			plantree_list = pg_plan_queries(querytree_list, 0, NULL);
+		#else
+			plantree_list = pg_plan_queries(querytree_list, sql, 0, NULL);
+		#endif
 
 		/* Done with the snapshot used for parsing/planning */
 		if (snapshot_set)
