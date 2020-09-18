@@ -12,4 +12,8 @@ SELECT cron.unschedule(1);
 -- Invalid input: input too long
 SELECT cron.schedule(repeat('a', 1000), '');
 
+-- Try to update pg_cron on restart
+SELECT cron.schedule('@restar', 'ALTER EXTENSION pg_cron UPDATE');
+SELECT cron.schedule('@restart', 'ALTER EXTENSION pg_cron UPDATE');
+
 DROP EXTENSION pg_cron;
