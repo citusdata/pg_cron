@@ -123,7 +123,7 @@ parse_cron_entry(char *schedule)
 		 * HINT
 		 */
 		ch = get_string(cmd, MAX_COMMAND, file, " \t\n");
-		if (!strcmp("reboot", cmd)) {
+		if (!strcmp("reboot", cmd) || !strcmp("restart", cmd)) {
 			e->flags |= WHEN_REBOOT;
 		} else if (!strcmp("yearly", cmd) || !strcmp("annually", cmd)){
 			bit_set(e->minute, 0);
