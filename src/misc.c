@@ -54,6 +54,11 @@ get_char(file)
 	else if (buffer->pointer == buffer->length)
 	{
 		ch = '\0';
+		buffer->pointer++;
+	}
+	else if (buffer->pointer > buffer->length)
+	{
+		ch = EOF;
 	}
 	else
 	{
