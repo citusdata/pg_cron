@@ -93,10 +93,6 @@ After restarting PostgreSQL, you can create the pg_cron functions and metadata t
 -- run as superuser:
 CREATE EXTENSION pg_cron;
 
--- on PostgreSQL 9.x, do this instead:
-CREATE EXTENSION pg_cron VERSION '1.0';
-ALTER EXTENSION pg_cron UPDATE;
-
 -- optionally, grant usage to regular users:
 GRANT USAGE ON SCHEMA cron TO marco;
 ```
