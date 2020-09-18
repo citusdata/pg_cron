@@ -130,11 +130,12 @@ You can use [.pgpass](https://www.postgresql.org/docs/current/static/libpq-pgpas
 
 The following table keeps track of which of the major managed Postgres services support pg_cron.
 
-| Service       | Supported     | Version  |
-| ------------- |:-------------:| --------:|
-| [Citus Cloud](https://www.citusdata.com/product/cloud)  | :heavy_check_mark: |   1.1.3    |
+| Service       | Supported     |
+| ------------- |:-------------:|
+| [Citus Cloud](https://www.citusdata.com/product/cloud)  | :heavy_check_mark: |
 | [Amazon RDS](https://aws.amazon.com/rds/postgresql/)     | :x:      |          |
-| [Azure](https://azure.microsoft.com/en-us/services/postgresql/) | :heavy_check_mark: for Hyperscale (Citus)   |  1.1.4 |
-| [DigitalOcean](https://www.digitalocean.com/products/managed-databases/) | :heavy_check_mark: | |
-| [Google Cloud](https://cloud.google.com/sql/docs/postgres/) | :x:      |          |
+| [Azure](https://azure.microsoft.com/en-us/services/postgresql/) | :heavy_check_mark: for Hyperscale (Citus)   |
+| [DigitalOcean](https://www.digitalocean.com/products/managed-databases/) | :heavy_check_mark: |
+| [Google Cloud](https://cloud.google.com/sql/docs/postgres/) | :x:      |
 | [Heroku](https://elements.heroku.com/addons/heroku-postgresql) | :x: | |
+| [Crunchy Bridge](https://www.crunchydata.com/products/crunchy-bridge/?ref=producthunt) | :heavy_check_mark: |
