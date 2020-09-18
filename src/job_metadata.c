@@ -77,6 +77,7 @@ static Oid CronJobRelationId(void);
 
 static CronJob * TupleToCronJob(TupleDesc tupleDescriptor, HeapTuple heapTuple);
 static bool PgCronHasBeenLoaded(void);
+static bool JobRunDetailsTableExists(void);
 
 
 /* SQL-callable functions */
@@ -295,9 +296,17 @@ NextRunId(void)
 	int64 jobId = 0;
 	bool failOK = true;
 
-	SetCurrentStatementStartTimestamp();
 	StartTransactionCommand();
 	PushActiveSnapshot(GetTransactionSnapshot());
+
+	if (!JobRunDetailsTableExists())
+	{
+		PopActiveSnapshot();
+		CommitTransactionCommand();
+
+		/* if the job_run_details table is not yet created, the run ID is not used */
+		return 0;
+	}
 
 	/* resolve relationId from passed in schema and relation name */
 	sequenceName = cstring_to_text(RUN_ID_SEQUENCE_NAME);
@@ -315,6 +324,9 @@ NextRunId(void)
 	SetUserIdAndSecContext(savedUserId, savedSecurityContext);
 
 	jobId = DatumGetInt64(jobIdDatum);
+
+	PopActiveSnapshot();
+	CommitTransactionCommand();
 
 	return jobId;
 }
@@ -704,11 +716,10 @@ InsertJobRunDetail(int64 runId, int64 *jobId, char *database, char *username, ch
 	StartTransactionCommand();
 	PushActiveSnapshot(GetTransactionSnapshot());
 
-	if (!PgCronHasBeenLoaded() || RecoveryInProgress())
+	if (!PgCronHasBeenLoaded() || RecoveryInProgress() || !JobRunDetailsTableExists())
 	{
 		PopActiveSnapshot();
 		CommitTransactionCommand();
-		ereport(LOG,(errmsg("pg_cron not loaded/present or recovery in progress")));
 		return;
 	}
 
@@ -774,11 +785,10 @@ UpdateJobRunDetail(int64 runId, int32 *job_pid, char *status, char *return_messa
 	StartTransactionCommand();
 	PushActiveSnapshot(GetTransactionSnapshot());
 
-	if (!PgCronHasBeenLoaded() || RecoveryInProgress())
+	if (!PgCronHasBeenLoaded() || RecoveryInProgress() || !JobRunDetailsTableExists())
 	{
 		PopActiveSnapshot();
 		CommitTransactionCommand();
-		ereport(LOG,(errmsg("pg_cron not loaded/present or recovery in progress")));
 		return;
 	}
 
@@ -872,7 +882,7 @@ MarkPendingRunsAsFailed(void)
 	StartTransactionCommand();
 	PushActiveSnapshot(GetTransactionSnapshot());
 
-	if (!PgCronHasBeenLoaded() || RecoveryInProgress())
+	if (!PgCronHasBeenLoaded() || RecoveryInProgress() || !JobRunDetailsTableExists())
 	{
 		PopActiveSnapshot();
 		CommitTransactionCommand();
@@ -933,4 +943,18 @@ GetCronStatus(CronStatus cronstatus)
 		break;
 	}
 	return statusDesc;
+}
+
+
+/*
+ * JobRunDetailsTableExists returns whether the job_run_details table exists.
+ */
+static bool
+JobRunDetailsTableExists(void)
+{
+	Oid cronSchemaId = get_namespace_oid(CRON_SCHEMA_NAME, false);
+	Oid jobRunDetailsTableOid = get_relname_relid(JOB_RUN_DETAILS_TABLE_NAME,
+												  cronSchemaId);
+
+	return jobRunDetailsTableOid != InvalidOid;
 }

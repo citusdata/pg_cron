@@ -1136,8 +1136,6 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 
 			/* Add new entry to audit table. */
 			task->runId = NextRunId();
-			PopActiveSnapshot();
-			CommitTransactionCommand();
 			if (CronLogRun)
 				InsertJobRunDetail(task->runId, &cronJob->jobId,
 										cronJob->database,
