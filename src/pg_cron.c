@@ -1625,7 +1625,16 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 		case CRON_TASK_DONE:
 		default:
 		{
+			int currentPendingRunCount = task->pendingRunCount;
+
 			InitializeCronTask(task, jobId);
+
+			/*
+			 * We keep the number of runs that should have started while
+			 * the task was still running. If >0, this will trigger another
+			 * run immediately.
+			 */
+			task->pendingRunCount = currentPendingRunCount;
 		}
 	}
 }
