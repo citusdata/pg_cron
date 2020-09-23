@@ -69,8 +69,9 @@
 /* forward declarations */
 static HTAB * CreateCronJobHash(void);
 
-static int64 NextJobId(void);
+static int64 ScheduleCronJob(Name jobName, char *schedule, char *command);
 static Oid CronExtensionOwner(void);
+static void EnsureDeletePermission(Relation cronJobsTable, HeapTuple heapTuple);
 static void InvalidateJobCacheCallback(Datum argument, Oid relationId);
 static void InvalidateJobCache(void);
 static Oid CronJobRelationId(void);
@@ -82,7 +83,9 @@ static bool JobRunDetailsTableExists(void);
 
 /* SQL-callable functions */
 PG_FUNCTION_INFO_V1(cron_schedule);
+PG_FUNCTION_INFO_V1(cron_schedule_named);
 PG_FUNCTION_INFO_V1(cron_unschedule);
+PG_FUNCTION_INFO_V1(cron_unschedule_named);
 PG_FUNCTION_INFO_V1(cron_job_cache_invalidate);
 
 
@@ -167,7 +170,7 @@ GetCronJob(int64 jobId)
 
 
 /*
- * cluster_schedule schedules a cron job.
+ * cron_schedule schedules an unnamed cron job.
  */
 Datum
 cron_schedule(PG_FUNCTION_ARGS)
@@ -175,21 +178,57 @@ cron_schedule(PG_FUNCTION_ARGS)
 	text *scheduleText = PG_GETARG_TEXT_P(0);
 	text *commandText = PG_GETARG_TEXT_P(1);
 
+	Name jobName = NULL;
 	char *schedule = text_to_cstring(scheduleText);
 	char *command = text_to_cstring(commandText);
+
+	int64 jobId = ScheduleCronJob(jobName, schedule, command);
+
+	PG_RETURN_INT64(jobId);
+}
+
+
+/*
+ * cron_schedule_named schedules a named cron job
+ */
+Datum
+cron_schedule_named(PG_FUNCTION_ARGS)
+{
+	Name jobName = PG_GETARG_NAME(0);
+	text *scheduleText = PG_GETARG_TEXT_P(1);
+	text *commandText = PG_GETARG_TEXT_P(2);
+
+	char *schedule = text_to_cstring(scheduleText);
+	char *command = text_to_cstring(commandText);
+
+	int64 jobId = ScheduleCronJob(jobName, schedule, command);
+
+	PG_RETURN_INT64(jobId);
+}
+
+
+/*
+ * ScheduleCronJob schedules a cron job with the given name.
+ */
+static int64
+ScheduleCronJob(Name jobName, char *schedule, char *command)
+{
 	entry *parsedSchedule = NULL;
 
 	int64 jobId = 0;
 	Datum jobIdDatum = 0;
 
-	Oid cronSchemaId = InvalidOid;
-	Oid cronJobsRelationId = InvalidOid;
+	StringInfoData querybuf;
+	Oid argTypes[MAX_NUMBER_SPI_EXEC_ARGS];
+	Datum argValues[MAX_NUMBER_SPI_EXEC_ARGS];
+	int argCount = 0;
 
-	Relation cronJobsTable = NULL;
-	TupleDesc tupleDescriptor = NULL;
-	HeapTuple heapTuple = NULL;
-	Datum values[Natts_cron_job];
-	bool isNulls[Natts_cron_job];
+	Oid savedUserId = InvalidOid;
+	int savedSecurityContext = 0;
+
+	TupleDesc returnedRowDescriptor = NULL;
+	HeapTuple returnedRow = NULL;
+	bool returnedJobIdIsNull = false;
 
 	Oid userId = GetUserId();
 	char *userName = GetUserNameFromId(userId, false);
@@ -203,85 +242,105 @@ cron_schedule(PG_FUNCTION_ARGS)
 
 	free_entry(parsedSchedule);
 
-	/* form new job tuple */
-	memset(values, 0, sizeof(values));
-	memset(isNulls, false, sizeof(isNulls));
+	initStringInfo(&querybuf);
 
-	jobId = NextJobId();
-	jobIdDatum = Int64GetDatum(jobId);
+	appendStringInfo(&querybuf,
+		"insert into %s (schedule, command, nodename, nodeport, database, username",
+		quote_qualified_identifier(CRON_SCHEMA_NAME, JOBS_TABLE_NAME));
 
-	values[Anum_cron_job_jobid - 1] = jobIdDatum;
-	values[Anum_cron_job_schedule - 1] = CStringGetTextDatum(schedule);
-	values[Anum_cron_job_command - 1] = CStringGetTextDatum(command);
-	values[Anum_cron_job_nodename - 1] = CStringGetTextDatum(CronHost);
-	values[Anum_cron_job_nodeport - 1] = Int32GetDatum(PostPortNumber);
-	values[Anum_cron_job_database - 1] = CStringGetTextDatum(CronTableDatabaseName);
-	values[Anum_cron_job_username - 1] = CStringGetTextDatum(userName);
-	values[Anum_cron_job_active - 1] = BoolGetDatum(true);
+	if (jobName != NULL)
+	{
+		appendStringInfo(&querybuf, ", jobname");
+	}
 
-	cronSchemaId = get_namespace_oid(CRON_SCHEMA_NAME, false);
-	cronJobsRelationId = get_relname_relid(JOBS_TABLE_NAME, cronSchemaId);
+	appendStringInfo(&querybuf, ") values ($1, $2, $3, $4, $5, $6");
 
-	/* open jobs relation and insert new tuple */
-	cronJobsTable = table_open(cronJobsRelationId, RowExclusiveLock);
+	if (jobName != NULL)
+	{
+		appendStringInfo(&querybuf, ", $7) on conflict (jobname) do update set ");
+		appendStringInfo(&querybuf, "schedule = EXCLUDED.schedule, ");
+		appendStringInfo(&querybuf, "command = EXCLUDED.command");
+	}
+	else
+	{
+		appendStringInfo(&querybuf, ")");
+	}
 
-	tupleDescriptor = RelationGetDescr(cronJobsTable);
-	heapTuple = heap_form_tuple(tupleDescriptor, values, isNulls);
+	appendStringInfo(&querybuf, " returning jobid");
 
-#if (PG_VERSION_NUM >= 100000)
-	CatalogTupleInsert(cronJobsTable, heapTuple);
-#else
-	simple_heap_insert(cronJobsTable, heapTuple);
-	CatalogUpdateIndexes(cronJobsTable, heapTuple);
-#endif
-	CommandCounterIncrement();
+	argTypes[0] = TEXTOID;
+	argValues[0] = CStringGetTextDatum(schedule);
+	argCount++;
 
-	/* close relation and invalidate previous cache entry */
-	table_close(cronJobsTable, NoLock);
+	argTypes[1] = TEXTOID;
+	argValues[1] = CStringGetTextDatum(command);
+	argCount++;
 
-	InvalidateJobCache();
+	argTypes[2] = TEXTOID;
+	argValues[2] = CStringGetTextDatum(CronHost);
+	argCount++;
 
-	PG_RETURN_INT64(jobId);
-}
+	argTypes[3] = INT4OID;
+	argValues[3] = Int32GetDatum(PostPortNumber);
+	argCount++;
 
+	argTypes[4] = TEXTOID;
+	argValues[4] = CStringGetTextDatum(CronTableDatabaseName);
+	argCount++;
 
-/*
- * NextJobId returns a new, unique job ID using the job ID sequence.
- */
-static int64
-NextJobId(void)
-{
-	text *sequenceName = NULL;
-	Oid sequenceId = InvalidOid;
-	List *sequenceNameList = NIL;
-	RangeVar *sequenceVar = NULL;
-	Datum sequenceIdDatum = InvalidOid;
-	Oid savedUserId = InvalidOid;
-	int savedSecurityContext = 0;
-	Datum jobIdDatum = 0;
-	int64 jobId = 0;
-	bool failOK = true;
+	argTypes[5] = TEXTOID;
+	argValues[5] = CStringGetTextDatum(userName);
+	argCount++;
 
-	/* resolve relationId from passed in schema and relation name */
-	sequenceName = cstring_to_text(JOB_ID_SEQUENCE_NAME);
-	sequenceNameList = textToQualifiedNameList(sequenceName);
-	sequenceVar = makeRangeVarFromNameList(sequenceNameList);
-	sequenceId = RangeVarGetRelid(sequenceVar, NoLock, failOK);
-	sequenceIdDatum = ObjectIdGetDatum(sequenceId);
+	if (jobName != NULL)
+	{
+		argTypes[6] = NAMEOID;
+		argValues[6] = NameGetDatum(jobName);
+		argCount++;
+	}
 
 	GetUserIdAndSecContext(&savedUserId, &savedSecurityContext);
 	SetUserIdAndSecContext(CronExtensionOwner(), SECURITY_LOCAL_USERID_CHANGE);
 
-	/* generate new and unique colocation id from sequence */
-	jobIdDatum = DirectFunctionCall1(nextval_oid, sequenceIdDatum);
+	/* Open SPI context. */
+	if (SPI_connect() != SPI_OK_CONNECT)
+	{
+		elog(ERROR, "SPI_connect failed");
+	}
+
+	if (SPI_execute_with_args(querybuf.data, argCount, argTypes, argValues, NULL,
+							  false, 1) != SPI_OK_INSERT_RETURNING)
+	{
+		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
+	}
+
+	if (SPI_processed <= 0)
+	{
+		elog(ERROR, "query did not return any rows: %s", querybuf.data);
+	}
+
+	returnedRowDescriptor = SPI_tuptable->tupdesc;
+	returnedRow = SPI_tuptable->vals[0];
+
+	jobIdDatum = SPI_getbinval(returnedRow, returnedRowDescriptor, 1,
+							   &returnedJobIdIsNull);
+	jobId = DatumGetInt64(jobIdDatum);
+
+	pfree(querybuf.data);
+
+	SPI_finish();
 
 	SetUserIdAndSecContext(savedUserId, savedSecurityContext);
 
-	jobId = DatumGetInt64(jobIdDatum);
+	InvalidateJobCache();
 
 	return jobId;
 }
 
+
+/*
+ * NextRunId draws a new run ID from cron.runid_seq.
+ */
 int64
 NextRunId(void)
 {
@@ -373,7 +432,7 @@ CronExtensionOwner(void)
 
 
 /*
- * cluster_unschedule removes a cron job.
+ * cron_unschedule removes a cron job.
  */
 Datum
 cron_unschedule(PG_FUNCTION_ARGS)
@@ -388,13 +447,7 @@ cron_unschedule(PG_FUNCTION_ARGS)
 	ScanKeyData scanKey[1];
 	int scanKeyCount = 1;
 	bool indexOK = true;
-	TupleDesc tupleDescriptor = NULL;
 	HeapTuple heapTuple = NULL;
-	bool isNull = false;
-	Oid userId = InvalidOid;
-	char *userName = NULL;
-	Datum ownerNameDatum = 0;
-	char *ownerName = NULL;
 
 	cronSchemaId = get_namespace_oid(CRON_SCHEMA_NAME, false);
 	cronJobIndexId = get_relname_relid(JOB_ID_INDEX_NAME, cronSchemaId);
@@ -408,8 +461,6 @@ cron_unschedule(PG_FUNCTION_ARGS)
 										cronJobIndexId, indexOK,
 										NULL, scanKeyCount, scanKey);
 
-	tupleDescriptor = RelationGetDescr(cronJobsTable);
-
 	heapTuple = systable_getnext(scanDescriptor);
 	if (!HeapTupleIsValid(heapTuple))
 	{
@@ -417,13 +468,82 @@ cron_unschedule(PG_FUNCTION_ARGS)
 							   INT64_FORMAT, jobId)));
 	}
 
-	/* check if the current user owns the row */
-	userId = GetUserId();
-	userName = GetUserNameFromId(userId, false);
+	EnsureDeletePermission(cronJobsTable, heapTuple);
 
-	ownerNameDatum = heap_getattr(heapTuple, Anum_cron_job_username,
-								  tupleDescriptor, &isNull);
-	ownerName = TextDatumGetCString(ownerNameDatum);
+	simple_heap_delete(cronJobsTable, &heapTuple->t_self);
+
+	systable_endscan(scanDescriptor);
+	table_close(cronJobsTable, NoLock);
+
+	CommandCounterIncrement();
+	InvalidateJobCache();
+
+	PG_RETURN_BOOL(true);
+}
+
+
+/*
+ * cron_unschedule_named removes a cron job by name.
+ */
+Datum
+cron_unschedule_named(PG_FUNCTION_ARGS)
+{
+	Datum jobNameDatum = PG_GETARG_DATUM(0);
+	Name jobName = DatumGetName(jobNameDatum);
+
+	Relation cronJobsTable = NULL;
+	SysScanDesc scanDescriptor = NULL;
+	ScanKeyData scanKey[1];
+	int scanKeyCount = 1;
+	bool indexOK = false;
+	HeapTuple heapTuple = NULL;
+
+	cronJobsTable = table_open(CronJobRelationId(), RowExclusiveLock);
+
+	ScanKeyInit(&scanKey[0], Anum_cron_job_jobname,
+				BTEqualStrategyNumber, F_NAMEEQ, jobNameDatum);
+
+	scanDescriptor = systable_beginscan(cronJobsTable, InvalidOid, indexOK,
+										NULL, scanKeyCount, scanKey);
+
+	heapTuple = systable_getnext(scanDescriptor);
+	if (!HeapTupleIsValid(heapTuple))
+	{
+		ereport(ERROR, (errmsg("could not find valid entry for job '%s'",
+							   NameStr(*jobName))));
+	}
+
+	EnsureDeletePermission(cronJobsTable, heapTuple);
+
+	simple_heap_delete(cronJobsTable, &heapTuple->t_self);
+
+	systable_endscan(scanDescriptor);
+	table_close(cronJobsTable, NoLock);
+
+	CommandCounterIncrement();
+	InvalidateJobCache();
+
+	PG_RETURN_BOOL(true);
+}
+
+
+/*
+ * EnsureDeletePermission throws an error if the current user does
+ * not have permission to delete the given cron.job tuple.
+ */
+static void
+EnsureDeletePermission(Relation cronJobsTable, HeapTuple heapTuple)
+{
+	TupleDesc tupleDescriptor = RelationGetDescr(cronJobsTable);
+
+	/* check if the current user owns the row */
+	Oid userId = GetUserId();
+	char *userName = GetUserNameFromId(userId, false);
+
+	bool isNull = false;
+	Datum ownerNameDatum = heap_getattr(heapTuple, Anum_cron_job_username,
+										tupleDescriptor, &isNull);
+	char *ownerName = TextDatumGetCString(ownerNameDatum);
 	if (pg_strcasecmp(userName, ownerName) != 0)
 	{
 		/* otherwise, allow if the user has DELETE permission */
@@ -440,16 +560,6 @@ cron_unschedule(PG_FUNCTION_ARGS)
 						   get_rel_name(CronJobRelationId()));
 		}
 	}
-
-	simple_heap_delete(cronJobsTable, &heapTuple->t_self);
-
-	systable_endscan(scanDescriptor);
-	table_close(cronJobsTable, NoLock);
-
-	CommandCounterIncrement();
-	InvalidateJobCache();
-
-	PG_RETURN_BOOL(true);
 }
 
 
@@ -623,8 +733,6 @@ TupleToCronJob(TupleDesc tupleDescriptor, HeapTuple heapTuple)
 	Datum userName = heap_getattr(heapTuple, Anum_cron_job_username,
 								  tupleDescriptor, &isNull);
 
-	Assert(!HeapTupleHasNulls(heapTuple));
-
 	jobKey = DatumGetInt64(jobId);
 	job = hash_search(CronJobHash, &jobKey, HASH_ENTER, &isPresent);
 
@@ -646,6 +754,21 @@ TupleToCronJob(TupleDesc tupleDescriptor, HeapTuple heapTuple)
 	else
 	{
 		job->active = true;
+	}
+
+	if (tupleDescriptor->natts >= Anum_cron_job_jobname)
+	{
+		bool isJobNameNull = false;
+		Datum jobName = heap_getattr(heapTuple, Anum_cron_job_jobname,
+									 tupleDescriptor, &isJobNameNull);
+		if (!isJobNameNull)
+		{
+			job->jobName = DatumGetName(jobName);
+		}
+		else
+		{
+			job->jobName = NULL;
+		}
 	}
 
 	parsedSchedule = parse_cron_entry(job->scheduleText);
