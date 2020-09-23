@@ -257,7 +257,9 @@ ScheduleCronJob(Name jobName, char *schedule, char *command)
 
 	if (jobName != NULL)
 	{
-		appendStringInfo(&querybuf, ", $7) on conflict (jobname) do update set ");
+		appendStringInfo(&querybuf, ", $7) ");
+		appendStringInfo(&querybuf, "on conflict on constraint jobname_username_uniq ");
+		appendStringInfo(&querybuf, "do update set ");
 		appendStringInfo(&querybuf, "schedule = EXCLUDED.schedule, ");
 		appendStringInfo(&querybuf, "command = EXCLUDED.command");
 	}
@@ -491,10 +493,14 @@ cron_unschedule_named(PG_FUNCTION_ARGS)
 	Datum jobNameDatum = PG_GETARG_DATUM(0);
 	Name jobName = DatumGetName(jobNameDatum);
 
+	Oid userId = GetUserId();
+	char *userName = GetUserNameFromId(userId, false);
+	Datum userNameDatum = CStringGetTextDatum(userName);
+
 	Relation cronJobsTable = NULL;
 	SysScanDesc scanDescriptor = NULL;
-	ScanKeyData scanKey[1];
-	int scanKeyCount = 1;
+	ScanKeyData scanKey[2];
+	int scanKeyCount = 2;
 	bool indexOK = false;
 	HeapTuple heapTuple = NULL;
 
@@ -502,6 +508,8 @@ cron_unschedule_named(PG_FUNCTION_ARGS)
 
 	ScanKeyInit(&scanKey[0], Anum_cron_job_jobname,
 				BTEqualStrategyNumber, F_NAMEEQ, jobNameDatum);
+	ScanKeyInit(&scanKey[1], Anum_cron_job_username,
+				BTEqualStrategyNumber, F_TEXTEQ, userNameDatum);
 
 	scanDescriptor = systable_beginscan(cronJobsTable, InvalidOid, indexOK,
 										NULL, scanKeyCount, scanKey);

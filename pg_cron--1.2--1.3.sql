@@ -22,7 +22,10 @@ CREATE POLICY cron_job_run_details_policy ON cron.job_run_details USING (usernam
 SELECT pg_catalog.pg_extension_config_dump('cron.job_run_details', '');
 SELECT pg_catalog.pg_extension_config_dump('cron.runid_seq', '');
 
-ALTER TABLE cron.job ADD COLUMN jobname name UNIQUE;
+ALTER TABLE cron.job ADD COLUMN jobname name;
+
+CREATE UNIQUE INDEX jobname_username_idx ON cron.job (jobname, username);
+ALTER TABLE cron.job ADD CONSTRAINT jobname_username_uniq UNIQUE USING INDEX jobname_username_idx;
 
 CREATE FUNCTION cron.schedule(job_name name, schedule text, command text)
     RETURNS bigint
