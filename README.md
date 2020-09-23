@@ -111,17 +111,6 @@ Articles showing possible ways of using pg_cron:
 * [Feeding cats](http://bonesmoses.org/2016/09/09/pg-phriday-irrelevant-inclinations/)
 * [Routinely invoking a function](https://fluca1978.github.io/2019/05/21/pgcron.html)
 
-## Advanced usage
-
-Since pg_cron uses libpq, you can also run periodic jobs on other databases or other machines. If you are superuser, then you can manually modify the `cron.job` table and use custom values for nodename and nodeport to connect to a different machine:
-
-```sql
-INSERT INTO cron.job (schedule, command, nodename, nodeport, database, username)
-VALUES ('0 4 * * *', 'VACUUM', 'node-1', 5432, 'postgres', 'marco');
-```
-
-You can use [.pgpass](https://www.postgresql.org/docs/current/static/libpq-pgpass.html) to allow pg_cron to authenticate with the remote server.
-
 ## Managed services
 
 The following table keeps track of which of the major managed Postgres services support pg_cron.
