@@ -1,3 +1,13 @@
+### pg_cron v1.3.0 (September 30, 2020) ###
+
+* Background worker support by Bertrand Drouvot
+* Audit table support by Bertrand Drouvot
+* PostgreSQL 13 support by Alexander Kukushkin
+* Schedule jobs by name
+* Fixes a bug that could cause cron.schedule to crash with long schedules
+* Fixes a bug that could cause cron.schedule to get into an infinite loop
+* Fixes a bug that caused overlapping runs not to start
+
 ### pg_cron v1.2.0 (August 30, 2019) ###
 
 * PostgreSQL 12 support by dverite
