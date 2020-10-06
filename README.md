@@ -14,13 +14,25 @@ SELECT cron.schedule('30 3 * * 6', $$DELETE FROM events WHERE event_time < now()
        42
 
 -- Vacuum every day at 10:00am (GMT)
-SELECT cron.schedule('0 10 * * *', 'VACUUM');
+SELECT cron.schedule('nightly-vacuum', '0 10 * * *', 'VACUUM');
  schedule
 ----------
        43
 
--- Stop scheduling a job
-SELECT cron.unschedule(43);
+-- Change to vacuum at 3:00am (GMT)
+SELECT cron.schedule('nightly-vacuum', '0 3 * * *', 'VACUUM');
+ schedule
+----------
+       43
+
+-- Stop scheduling jobs
+SELECT cron.unschedule('nightly-vacuum' );
+ unschedule 
+------------
+ t
+(1 row)
+
+SELECT cron.unschedule(42);
  unschedule
 ------------
           t
