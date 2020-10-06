@@ -63,7 +63,6 @@
 #define JOB_ID_SEQUENCE_NAME "cron.jobid_seq"
 #define JOB_RUN_DETAILS_TABLE_NAME "job_run_details"
 #define RUN_ID_SEQUENCE_NAME "cron.runid_seq"
-#define MAX_NUMBER_SPI_EXEC_ARGS 6
 
 
 /* forward declarations */
@@ -219,8 +218,8 @@ ScheduleCronJob(Name jobName, char *schedule, char *command)
 	Datum jobIdDatum = 0;
 
 	StringInfoData querybuf;
-	Oid argTypes[MAX_NUMBER_SPI_EXEC_ARGS];
-	Datum argValues[MAX_NUMBER_SPI_EXEC_ARGS];
+	Oid argTypes[7];
+	Datum argValues[7];
 	int argCount = 0;
 
 	Oid savedUserId = InvalidOid;
@@ -840,8 +839,9 @@ void
 InsertJobRunDetail(int64 runId, int64 *jobId, char *database, char *username, char *command, char *status)
 {
 	StringInfoData querybuf;
-	Oid argTypes[MAX_NUMBER_SPI_EXEC_ARGS];
-	Datum argValues[MAX_NUMBER_SPI_EXEC_ARGS];
+	const int argCount = 6;
+	Oid argTypes[6];
+	Datum argValues[6];
 
 	SetCurrentStatementStartTimestamp();
 	StartTransactionCommand();
@@ -892,7 +892,7 @@ InsertJobRunDetail(int64 runId, int64 *jobId, char *database, char *username, ch
 	pgstat_report_activity(STATE_RUNNING, querybuf.data);
 
 	if(SPI_execute_with_args(querybuf.data,
-		MAX_NUMBER_SPI_EXEC_ARGS, argTypes, argValues, NULL, false, 1) != SPI_OK_INSERT)
+		argCount, argTypes, argValues, NULL, false, 1) != SPI_OK_INSERT)
 		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
 
 	pfree(querybuf.data);
@@ -908,8 +908,8 @@ UpdateJobRunDetail(int64 runId, int32 *job_pid, char *status, char *return_messa
                                                                         TimestampTz *end_time)
 {
 	StringInfoData querybuf;
-	Oid argTypes[MAX_NUMBER_SPI_EXEC_ARGS];
-	Datum argValues[MAX_NUMBER_SPI_EXEC_ARGS];
+	Oid argTypes[6];
+	Datum argValues[6];
 	int i;
 
 	SetCurrentStatementStartTimestamp();
