@@ -36,9 +36,14 @@
 #include "task_states.h"
 #include "job_metadata.h"
 
-#include "poll.h"
+
+#ifdef HAVE_POLL_H
+#include <poll.h>
+#elif defined(HAVE_SYS_POLL_H)
+#include <sys/poll.h>
+#endif
+
 #include "sys/time.h"
-#include "sys/poll.h"
 #include "time.h"
 
 #include "access/genam.h"
