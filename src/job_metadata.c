@@ -50,6 +50,8 @@
 
 #include "executor/spi.h"
 #include "catalog/pg_type.h"
+#include "commands/dbcommands.h"
+#include "catalog/pg_authid.h"
 
 #if (PG_VERSION_NUM < 120000)
 #define table_open(r, l) heap_open(r, l)
@@ -68,7 +70,9 @@
 /* forward declarations */
 static HTAB * CreateCronJobHash(void);
 
-static int64 ScheduleCronJob(Name jobName, char *schedule, char *command);
+static int64 ScheduleCronJob(text *scheduleText, text *commandText,
+								text *databaseText, text *usernameText,
+								bool active, text *jobnameText);
 static Oid CronExtensionOwner(void);
 static void EnsureDeletePermission(Relation cronJobsTable, HeapTuple heapTuple);
 static void InvalidateJobCacheCallback(Datum argument, Oid relationId);
@@ -78,7 +82,12 @@ static Oid CronJobRelationId(void);
 static CronJob * TupleToCronJob(TupleDesc tupleDescriptor, HeapTuple heapTuple);
 static bool PgCronHasBeenLoaded(void);
 static bool JobRunDetailsTableExists(void);
+static bool JobTableExists(void);
 
+static void AlterJob(int64 jobId, text *scheduleText, text *commandText,
+						text *databaseText, text *usernameText, bool *active);
+
+static Oid GetRoleOidIfCanLogin(char *username);
 
 /* SQL-callable functions */
 PG_FUNCTION_INFO_V1(cron_schedule);
@@ -86,6 +95,7 @@ PG_FUNCTION_INFO_V1(cron_schedule_named);
 PG_FUNCTION_INFO_V1(cron_unschedule);
 PG_FUNCTION_INFO_V1(cron_unschedule_named);
 PG_FUNCTION_INFO_V1(cron_job_cache_invalidate);
+PG_FUNCTION_INFO_V1(cron_alter_job);
 
 
 /* global variables */
@@ -167,59 +177,28 @@ GetCronJob(int64 jobId)
 	return job;
 }
 
-
-/*
- * cron_schedule schedules an unnamed cron job.
- */
-Datum
-cron_schedule(PG_FUNCTION_ARGS)
-{
-	text *scheduleText = PG_GETARG_TEXT_P(0);
-	text *commandText = PG_GETARG_TEXT_P(1);
-
-	Name jobName = NULL;
-	char *schedule = text_to_cstring(scheduleText);
-	char *command = text_to_cstring(commandText);
-
-	int64 jobId = ScheduleCronJob(jobName, schedule, command);
-
-	PG_RETURN_INT64(jobId);
-}
-
-
-/*
- * cron_schedule_named schedules a named cron job
- */
-Datum
-cron_schedule_named(PG_FUNCTION_ARGS)
-{
-	Name jobName = PG_GETARG_NAME(0);
-	text *scheduleText = PG_GETARG_TEXT_P(1);
-	text *commandText = PG_GETARG_TEXT_P(2);
-
-	char *schedule = text_to_cstring(scheduleText);
-	char *command = text_to_cstring(commandText);
-
-	int64 jobId = ScheduleCronJob(jobName, schedule, command);
-
-	PG_RETURN_INT64(jobId);
-}
-
-
 /*
  * ScheduleCronJob schedules a cron job with the given name.
  */
 static int64
-ScheduleCronJob(Name jobName, char *schedule, char *command)
+ScheduleCronJob(text *scheduleText, text *commandText, text *databaseText,
+					text *usernameText, bool active, text *jobnameText)
 {
 	entry *parsedSchedule = NULL;
+	char *schedule;
+	char *command;
+	char *database_name;
+	char *jobName;
+	char *username;
+	AclResult aclresult;
+	Oid userIdcheckacl;
 
 	int64 jobId = 0;
 	Datum jobIdDatum = 0;
 
 	StringInfoData querybuf;
-	Oid argTypes[7];
-	Datum argValues[7];
+	Oid argTypes[8];
+	Datum argValues[8];
 	int argCount = 0;
 
 	Oid savedUserId = InvalidOid;
@@ -230,9 +209,13 @@ ScheduleCronJob(Name jobName, char *schedule, char *command)
 	bool returnedJobIdIsNull = false;
 
 	Oid userId = GetUserId();
-	char *userName = GetUserNameFromId(userId, false);
+	userIdcheckacl = GetUserId();
+	username = GetUserNameFromId(userId, false);
 
+	/* check schedule is valid */
+	schedule = text_to_cstring(scheduleText);
 	parsedSchedule = parse_cron_entry(schedule);
+
 	if (parsedSchedule == NULL)
 	{
 		ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
@@ -244,19 +227,19 @@ ScheduleCronJob(Name jobName, char *schedule, char *command)
 	initStringInfo(&querybuf);
 
 	appendStringInfo(&querybuf,
-		"insert into %s (schedule, command, nodename, nodeport, database, username",
+		"insert into %s (schedule, command, nodename, nodeport, database, username, active",
 		quote_qualified_identifier(CRON_SCHEMA_NAME, JOBS_TABLE_NAME));
 
-	if (jobName != NULL)
+	if (jobnameText != NULL)
 	{
 		appendStringInfo(&querybuf, ", jobname");
 	}
 
-	appendStringInfo(&querybuf, ") values ($1, $2, $3, $4, $5, $6");
+	appendStringInfo(&querybuf, ") values ($1, $2, $3, $4, $5, $6, $7");
 
-	if (jobName != NULL)
+	if (jobnameText != NULL)
 	{
-		appendStringInfo(&querybuf, ", $7) ");
+		appendStringInfo(&querybuf, ", $8) ");
 		appendStringInfo(&querybuf, "on conflict on constraint jobname_username_uniq ");
 		appendStringInfo(&querybuf, "do update set ");
 		appendStringInfo(&querybuf, "schedule = EXCLUDED.schedule, ");
@@ -274,6 +257,7 @@ ScheduleCronJob(Name jobName, char *schedule, char *command)
 	argCount++;
 
 	argTypes[1] = TEXTOID;
+	command = text_to_cstring(commandText);
 	argValues[1] = CStringGetTextDatum(command);
 	argCount++;
 
@@ -285,18 +269,48 @@ ScheduleCronJob(Name jobName, char *schedule, char *command)
 	argValues[3] = Int32GetDatum(PostPortNumber);
 	argCount++;
 
+	/* username has been provided */
+	if (usernameText != NULL)
+	{
+		if (!superuser())
+			elog(ERROR, "must be superuser to create a job for another role");
+
+		username = text_to_cstring(usernameText);
+		userIdcheckacl = GetRoleOidIfCanLogin(username);
+	}
+
+	/* database has been provided */
+	if (databaseText != NULL)
+		database_name = text_to_cstring(databaseText);
+	else
+	/* use the GUC */
+		database_name = CronTableDatabaseName;
+
+	/* ensure the user that is used in the job can connect to the database */
+	aclresult = pg_database_aclcheck(get_database_oid(database_name, false),
+										userIdcheckacl, ACL_CONNECT);
+
+	if (aclresult != ACLCHECK_OK)
+		elog(ERROR, "User %s does not have CONNECT privilege on %s",
+				GetUserNameFromId(userIdcheckacl, false), database_name);
+
 	argTypes[4] = TEXTOID;
-	argValues[4] = CStringGetTextDatum(CronTableDatabaseName);
+	argValues[4] = CStringGetTextDatum(database_name);
 	argCount++;
 
 	argTypes[5] = TEXTOID;
-	argValues[5] = CStringGetTextDatum(userName);
+	argValues[5] = CStringGetTextDatum(username);
 	argCount++;
 
-	if (jobName != NULL)
+	argTypes[6] = BOOLOID;
+	argValues[6] = BoolGetDatum(active);
+	argCount++;
+
+	if (jobnameText != NULL)
 	{
-		argTypes[6] = NAMEOID;
-		argValues[6] = NameGetDatum(jobName);
+		argTypes[7] = TEXTOID;
+		jobName = text_to_cstring(jobnameText);
+		argValues[7] = CStringGetTextDatum(jobName);
 		argCount++;
 	}
 
@@ -338,7 +352,143 @@ ScheduleCronJob(Name jobName, char *schedule, char *command)
 	return jobId;
 }
 
+/*
+ * GetRoleOidIfCanLogin
+ * Checks user exist and can log in
+ */
+static Oid
+GetRoleOidIfCanLogin(char *username)
+{
+	HeapTuple   roletup;
+	Form_pg_authid rform;
 
+	roletup = SearchSysCache1(AUTHNAME, PointerGetDatum(username));
+	if (!HeapTupleIsValid(roletup))
+		ereport(ERROR,
+				(errmsg("role \"%s\" does not exist",
+						username)));
+
+	rform = (Form_pg_authid) GETSTRUCT(roletup);
+
+	if (!rform->rolcanlogin)
+		ereport(ERROR,
+				(errmsg("role \"%s\" can not log in",
+						username),
+				 errdetail("Jobs may only be run by roles that have the LOGIN attribute.")));
+
+	ReleaseSysCache(roletup);
+	return rform->oid;
+}
+
+/*
+ * cron_alter_job alter a job
+ */
+Datum
+cron_alter_job(PG_FUNCTION_ARGS)
+{
+	int64 jobId;
+	text *scheduleText = NULL;
+	text *commandText = NULL;
+	text *databaseText = NULL;
+	text *usernameText = NULL;
+	bool active;
+
+	if (PG_ARGISNULL(0))
+		ereport(ERROR, (errmsg("job_id can not be NULL")));
+	else
+		jobId = PG_GETARG_INT64(0);
+
+	if (!PG_ARGISNULL(1))
+		scheduleText = PG_GETARG_TEXT_P(1);
+
+	if (!PG_ARGISNULL(2))
+		commandText = PG_GETARG_TEXT_P(2);
+
+	if (!PG_ARGISNULL(3))
+		databaseText = PG_GETARG_TEXT_P(3);
+
+	if (!PG_ARGISNULL(4))
+		usernameText = PG_GETARG_TEXT_P(4);
+
+	if (!PG_ARGISNULL(5))
+		active = PG_GETARG_BOOL(5);
+
+	AlterJob(jobId, scheduleText, commandText, databaseText, usernameText,
+				PG_ARGISNULL(5) ? NULL : &active);
+
+	PG_RETURN_VOID();
+}
+
+
+/*
+ * cron_schedule schedule a job
+ */
+Datum
+cron_schedule(PG_FUNCTION_ARGS)
+{
+	text *scheduleText = NULL;
+	text *commandText = NULL;
+	int64 jobId;
+
+	if (PG_ARGISNULL(0))
+		ereport(ERROR, (errmsg("schedule can not be NULL")));
+	else
+		scheduleText = PG_GETARG_TEXT_P(0);
+
+	if (PG_ARGISNULL(1))
+		ereport(ERROR, (errmsg("command can not be NULL")));
+	else
+		commandText = PG_GETARG_TEXT_P(1);
+
+	jobId = ScheduleCronJob(scheduleText, commandText, NULL,
+							NULL, true, NULL);
+
+	PG_RETURN_INT64(jobId);
+}
+
+/*
+ * cron_schedule schedule a named job
+ */
+Datum
+cron_schedule_named(PG_FUNCTION_ARGS)
+{
+	text *scheduleText = NULL;
+	text *commandText = NULL;
+	text *databaseText = NULL;
+	text *usernameText = NULL;
+	bool active = true;
+	text *jobnameText = NULL;
+	int64 jobId;
+
+	if (PG_ARGISNULL(0))
+		ereport(ERROR, (errmsg("job_name can not be NULL")));
+	else
+		jobnameText = PG_GETARG_TEXT_P(0);
+
+	if (PG_ARGISNULL(1))
+		ereport(ERROR, (errmsg("schedule can not be NULL")));
+	else
+		scheduleText = PG_GETARG_TEXT_P(1);
+
+	if (PG_ARGISNULL(2))
+		ereport(ERROR, (errmsg("command can not be NULL")));
+	else
+		commandText = PG_GETARG_TEXT_P(2);
+
+	if (!PG_ARGISNULL(3))
+		databaseText = PG_GETARG_TEXT_P(3);
+
+	if (!PG_ARGISNULL(4))
+		usernameText = PG_GETARG_TEXT_P(4);
+
+	if (!PG_ARGISNULL(5))
+		active = PG_GETARG_BOOL(5);
+
+	jobId = ScheduleCronJob(scheduleText, commandText, databaseText,
+							usernameText, active, jobnameText);
+
+	PG_RETURN_INT64(jobId);
+}
 /*
  * NextRunId draws a new run ID from cron.runid_seq.
  */
@@ -1004,6 +1154,161 @@ UpdateJobRunDetail(int64 runId, int32 *job_pid, char *status, char *return_messa
 	pgstat_report_activity(STATE_IDLE, NULL);
 }
 
+
+static void
+AlterJob(int64 jobId, text *scheduleText, text *commandText, text *databaseText, text *usernameText, bool *active)
+{
+	StringInfoData querybuf;
+	Oid argTypes[7];
+	Datum argValues[7];
+	int i;
+	AclResult aclresult;
+	Oid userId;
+	Oid userIdcheckacl;
+	Oid savedUserId;
+	int savedSecurityContext;
+	char *database_name;
+	char *schedule;
+	char *command;
+	char *username;
+	char *currentuser;
+	entry *parsedSchedule = NULL;
+
+	userId = GetUserId();
+	userIdcheckacl = GetUserId();
+
+	currentuser = GetUserNameFromId(userId, false);
+	savedUserId = InvalidOid;
+	savedSecurityContext = 0;
+
+	if (!PgCronHasBeenLoaded() || RecoveryInProgress() || !JobTableExists())
+	{
+		return;
+	}
+
+	initStringInfo(&querybuf);
+	i = 0;
+
+	appendStringInfo(&querybuf,
+		"update %s.%s set", CRON_SCHEMA_NAME, JOBS_TABLE_NAME);
+
+	/* username has been provided */
+	if (usernameText != NULL)
+	{
+		if (!superuser())
+			elog(ERROR, "must be superuser to alter username");
+
+		username = text_to_cstring(usernameText);
+		userIdcheckacl = GetRoleOidIfCanLogin(username);
+	}
+	else
+		username = currentuser;
+
+	/* add the fields to be updated */
+	/* database has been provided */
+	if (databaseText != NULL)
+	{
+		database_name = text_to_cstring(databaseText);
+		/* ensure the user that is used in the job can connect to the database */
+		aclresult = pg_database_aclcheck(get_database_oid(database_name, false), userIdcheckacl, ACL_CONNECT);
+
+		if (aclresult != ACLCHECK_OK)
+			elog(ERROR, "User %s does not have CONNECT privilege on %s", GetUserNameFromId(userIdcheckacl, false), database_name);
+
+		argTypes[i] = TEXTOID;
+		argValues[i] = CStringGetTextDatum(database_name);
+		i++;
+		appendStringInfo(&querybuf, " database = $%d,", i);
+	}
+
+	/* ensure schedule is valid */
+	if (scheduleText != NULL)
+	{
+		schedule = text_to_cstring(scheduleText);
+		parsedSchedule = parse_cron_entry(schedule);
+
+		if (parsedSchedule == NULL)
+		{
+			ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
+					errmsg("invalid schedule: %s", schedule)));
+		}
+
+		free_entry(parsedSchedule);
+
+		argTypes[i] = TEXTOID;
+		argValues[i] = CStringGetTextDatum(schedule);
+		i++;
+		appendStringInfo(&querybuf, " schedule = $%d,", i);
+	}
+
+	if (commandText != NULL)
+	{
+		argTypes[i] = TEXTOID;
+		command = text_to_cstring(commandText);
+		argValues[i] = CStringGetTextDatum(command);
+		i++;
+		appendStringInfo(&querybuf, " command = $%d,", i);
+	}
+
+	if (usernameText != NULL)
+	{
+		argTypes[i] = TEXTOID;
+		argValues[i] = CStringGetTextDatum(username);
+		i++;
+		appendStringInfo(&querybuf, " username = $%d,", i);
+	}
+
+	if (active != NULL)
+	{
+		argTypes[i] = BOOLOID;
+		argValues[i] = BoolGetDatum(*active);
+		i++;
+		appendStringInfo(&querybuf, " active = $%d,", i);
+	}
+
+	/* remove the last comma */
+	querybuf.len--;
+	querybuf.data[querybuf.len] = '\0';
+
+	/* and add the where clause */
+	argTypes[i] = INT8OID;
+	argValues[i] = Int64GetDatum(jobId);
+	i++;
+
+	appendStringInfo(&querybuf, " where jobid = $%d", i);
+
+	/* ensure the caller owns the row */
+	argTypes[i] = TEXTOID;
+	argValues[i] = CStringGetTextDatum(currentuser);
+	i++;
+
+	if (!superuser())
+		appendStringInfo(&querybuf, " and username = $%d", i);
+
+	if (i <= 2)
+		ereport(ERROR, (errmsg("no updates specified"),
+						errhint("You must specify at least one job attribute to change when calling alter_job")));
+
+	GetUserIdAndSecContext(&savedUserId, &savedSecurityContext);
+	SetUserIdAndSecContext(CronExtensionOwner(), SECURITY_LOCAL_USERID_CHANGE);
+
+	/* Open SPI context. */
+	if (SPI_connect() != SPI_OK_CONNECT)
+		elog(ERROR, "SPI_connect failed");
+	if(SPI_execute_with_args(querybuf.data,
+		i, argTypes, argValues, NULL, false, 1) != SPI_OK_UPDATE)
+		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
+
+	pfree(querybuf.data);
+
+	if (SPI_processed <= 0)
+		elog(ERROR, "Job %ld does not exist or you don't own it", jobId);
+
+	SPI_finish();
+	SetUserIdAndSecContext(savedUserId, savedSecurityContext);
+	InvalidateJobCache();
+}
+
 void
 MarkPendingRunsAsFailed(void)
 {
@@ -1088,4 +1393,17 @@ JobRunDetailsTableExists(void)
 												  cronSchemaId);
 
 	return jobRunDetailsTableOid != InvalidOid;
+}
+
+/*
+ * JobTableExists returns whether the job table exists.
+ */
+static bool
+JobTableExists(void)
+{
+	Oid cronSchemaId = get_namespace_oid(CRON_SCHEMA_NAME, false);
+	Oid jobTableOid = get_relname_relid(JOBS_TABLE_NAME,
+												cronSchemaId);
+
+	return jobTableOid != InvalidOid;
 }
