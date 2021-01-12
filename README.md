@@ -127,7 +127,7 @@ The following table keeps track of which of the major managed Postgres services 
 | Service       | Supported     |
 | ------------- |:-------------:|
 | [Alibaba Cloud](https://www.alibabacloud.com/help/doc-detail/150355.htm) | :heavy_check_mark: |
-| [Amazon RDS](https://aws.amazon.com/rds/postgresql/)     | :x:      |          |
+| [Amazon RDS](https://aws.amazon.com/rds/postgresql/)     | :heavy_check_mark:      |          |
 | [Azure](https://azure.microsoft.com/en-us/services/postgresql/) | :heavy_check_mark:  |
 | [Citus Cloud](https://www.citusdata.com/product/cloud)  | :heavy_check_mark: |
 | [Crunchy Bridge](https://www.crunchydata.com/products/crunchy-bridge/?ref=producthunt) | :heavy_check_mark: |
