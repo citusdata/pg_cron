@@ -5,11 +5,11 @@ SELECT extversion FROM pg_extension WHERE extname='pg_cron';
  1.0
 (1 row)
 
-ALTER EXTENSION pg_cron UPDATE TO '1.3';
+ALTER EXTENSION pg_cron UPDATE TO '1.4';
 SELECT extversion FROM pg_extension WHERE extname='pg_cron';
  extversion 
 ------------
- 1.3
+ 1.4
 (1 row)
 
 -- Vacuum every day at 10:00am (GMT)
@@ -93,4 +93,102 @@ SELECT jobid, jobname, schedule, command FROM cron.job ORDER BY jobid;
      2 |         | @restart | ALTER EXTENSION pg_cron UPDATE
 (1 row)
 
+-- Testing version >= 1.4 new APIs
+-- First as superuser
+-- Update a job without one job attribute to change
+SELECT cron.alter_job(2);
+ERROR:  no updates specified
+HINT:  You must specify at least one job attribute to change when calling alter_job
+-- Update to a non existing database
+select cron.alter_job(job_id:=2,database:='hopedoesnotexist');
+ERROR:  database "hopedoesnotexist" does not exist
+-- Create a database that does not allow connection
+create database pgcron_dbno;
+revoke connect on database pgcron_dbno from public;
+-- create a test user
+create user pgcron_cront with password 'pwd';
+GRANT USAGE ON SCHEMA cron TO pgcron_cront;
+-- Schedule a job for this user on the database that does not accept connections
+SELECT cron.schedule(job_name:='can not connect', schedule:='0 11 * * *', command:='VACUUM',database:='pgcron_dbno',username:='pgcron_cront');
+ERROR:  User pgcron_cront does not have CONNECT privilege on pgcron_dbno
+-- Create a database that does allow connections
+create database pgcron_dbyes;
+-- Schedule a job on the database that does accept connections for a non existing user
+SELECT cron.schedule(job_name:='user does not exist', schedule:='0 11 * * *', command:='VACUUM',database:='pgcron_dbyes',username:='pgcron_useraqwxszedc');
+ERROR:  role "pgcron_useraqwxszedc" does not exist
+-- Alter an existing job on a database that does not accept connections
+SELECT cron.alter_job(job_id:=2,database:='pgcron_dbno',username:='pgcron_cront');
+ERROR:  User pgcron_cront does not have CONNECT privilege on pgcron_dbno
+-- Second as non superuser
+SET SESSION AUTHORIZATION pgcron_cront;
+-- Create a job
+SELECT cron.schedule('My vacuum', '0 11 * * *', 'VACUUM');
+ schedule 
+----------
+        6
+(1 row)
+
+-- Create a job for another user
+SELECT cron.schedule(job_name:='his vacuum', schedule:='0 11 * * *', command:='VACUUM',username:='anotheruser');
+ERROR:  must be superuser to create a job for another role
+-- Change the username of an existing job that the user own
+select cron.alter_job(job_id:=6,username:='anotheruser');
+ERROR:  must be superuser to alter username
+-- Update a job that the user does not own
+select cron.alter_job(job_id:=2,database:='pgcron_dbyes');
+ERROR:  Job 2 does not exist or you don't own it
+-- change the database for a job that the user own and can connect to
+select cron.alter_job(job_id:=6,database:='pgcron_dbyes');
+ alter_job 
+-----------
+ 
+(1 row)
+
+SELECT database FROM cron.job;
+   database   
+--------------
+ pgcron_dbyes
+(1 row)
+
+-- change the database for a job that the user own but can not connect to
+select cron.alter_job(job_id:=6,database:='pgcron_dbno');
+ERROR:  User pgcron_cront does not have CONNECT privilege on pgcron_dbno
+SELECT database FROM cron.job;
+   database   
+--------------
+ pgcron_dbyes
+(1 row)
+
+-- back to superuser
+RESET SESSION AUTHORIZATION;
+-- Change the username of an existing job
+select cron.alter_job(job_id:=2,username:='pgcron_cront');
+ alter_job 
+-----------
+ 
+(1 row)
+
+SELECT username FROM cron.job where jobid=2;
+   username   
+--------------
+ pgcron_cront
+(1 row)
+
+-- Create a job for another user
+SELECT cron.schedule(job_name:='his vacuum', schedule:='0 11 * * *', command:='VACUUM',username:='pgcron_cront');
+ schedule 
+----------
+        7
+(1 row)
+
+SELECT username FROM cron.job where jobid=7;
+   username   
+--------------
+ pgcron_cront
+(1 row)
+
+-- cleaning
 DROP EXTENSION pg_cron;
+drop user pgcron_cront;
+drop database pgcron_dbno;
+drop database pgcron_dbyes;
