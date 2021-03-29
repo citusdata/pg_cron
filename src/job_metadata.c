@@ -355,6 +355,7 @@ NextRunId(void)
 	Datum jobIdDatum = 0;
 	int64 jobId = 0;
 	bool failOK = true;
+	MemoryContext originalContext = CurrentMemoryContext;
 
 	StartTransactionCommand();
 	PushActiveSnapshot(GetTransactionSnapshot());
@@ -363,6 +364,7 @@ NextRunId(void)
 	{
 		PopActiveSnapshot();
 		CommitTransactionCommand();
+		MemoryContextSwitchTo(originalContext);
 
 		/* if the job_run_details table is not yet created, the run ID is not used */
 		return 0;
@@ -387,6 +389,7 @@ NextRunId(void)
 
 	PopActiveSnapshot();
 	CommitTransactionCommand();
+	MemoryContextSwitchTo(originalContext);
 
 	return jobId;
 }
@@ -670,6 +673,7 @@ LoadCronJobList(void)
 	{
 		PopActiveSnapshot();
 		CommitTransactionCommand();
+		MemoryContextSwitchTo(originalContext);
 		pgstat_report_activity(STATE_IDLE, NULL);
 
 		return NIL;
@@ -704,9 +708,8 @@ LoadCronJobList(void)
 
 	PopActiveSnapshot();
 	CommitTransactionCommand();
-	pgstat_report_activity(STATE_IDLE, NULL);
-
 	MemoryContextSwitchTo(originalContext);
+	pgstat_report_activity(STATE_IDLE, NULL);
 
 	return jobList;
 }
@@ -842,6 +845,7 @@ InsertJobRunDetail(int64 runId, int64 *jobId, char *database, char *username, ch
 	const int argCount = 6;
 	Oid argTypes[6];
 	Datum argValues[6];
+	MemoryContext originalContext = CurrentMemoryContext;
 
 	SetCurrentStatementStartTimestamp();
 	StartTransactionCommand();
@@ -851,6 +855,7 @@ InsertJobRunDetail(int64 runId, int64 *jobId, char *database, char *username, ch
 	{
 		PopActiveSnapshot();
 		CommitTransactionCommand();
+		MemoryContextSwitchTo(originalContext);
 		return;
 	}
 
@@ -900,6 +905,7 @@ InsertJobRunDetail(int64 runId, int64 *jobId, char *database, char *username, ch
 	SPI_finish();
 	PopActiveSnapshot();
 	CommitTransactionCommand();
+	MemoryContextSwitchTo(originalContext);
 	pgstat_report_activity(STATE_IDLE, NULL);
 }
 
@@ -911,6 +917,7 @@ UpdateJobRunDetail(int64 runId, int32 *job_pid, char *status, char *return_messa
 	Oid argTypes[6];
 	Datum argValues[6];
 	int i;
+	MemoryContext originalContext = CurrentMemoryContext;
 
 	SetCurrentStatementStartTimestamp();
 	StartTransactionCommand();
@@ -920,6 +927,7 @@ UpdateJobRunDetail(int64 runId, int32 *job_pid, char *status, char *return_messa
 	{
 		PopActiveSnapshot();
 		CommitTransactionCommand();
+		MemoryContextSwitchTo(originalContext);
 		return;
 	}
 
@@ -1001,6 +1009,7 @@ UpdateJobRunDetail(int64 runId, int32 *job_pid, char *status, char *return_messa
 	SPI_finish();
 	PopActiveSnapshot();
 	CommitTransactionCommand();
+	MemoryContextSwitchTo(originalContext);
 	pgstat_report_activity(STATE_IDLE, NULL);
 }
 
@@ -1008,6 +1017,7 @@ void
 MarkPendingRunsAsFailed(void)
 {
 	StringInfoData querybuf;
+	MemoryContext originalContext = CurrentMemoryContext;
 
 	SetCurrentStatementStartTimestamp();
 	StartTransactionCommand();
@@ -1017,6 +1027,7 @@ MarkPendingRunsAsFailed(void)
 	{
 		PopActiveSnapshot();
 		CommitTransactionCommand();
+		MemoryContextSwitchTo(originalContext);
 		return;
 	}
 
@@ -1042,6 +1053,7 @@ MarkPendingRunsAsFailed(void)
 	SPI_finish();
 	PopActiveSnapshot();
 	CommitTransactionCommand();
+	MemoryContextSwitchTo(originalContext);
 	pgstat_report_activity(STATE_IDLE, NULL);
 }
 
