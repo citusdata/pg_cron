@@ -27,7 +27,7 @@ SELECT cron.schedule('nightly-vacuum', '0 3 * * *', 'VACUUM');
 
 -- Stop scheduling jobs
 SELECT cron.unschedule('nightly-vacuum' );
- unschedule 
+ unschedule
 ------------
  t
 (1 row)
@@ -135,3 +135,4 @@ The following table keeps track of which of the major managed Postgres services 
 | [Google Cloud](https://cloud.google.com/sql/docs/postgres/) | :x:      |
 | [Heroku](https://elements.heroku.com/addons/heroku-postgresql) | :x: | |
 | [Supabase](https://supabase.io/docs/guides/database) | :heavy_check_mark:  |
+| [Scaleway](https://www.scaleway.com/en/database/) | :heavy_check_mark:  |
