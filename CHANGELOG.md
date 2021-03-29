@@ -1,3 +1,7 @@
+### pg_cron v1.3.1 (March 29, 2021) ###
+
+* Fixes a memory leak
+
 ### pg_cron v1.3.0 (September 30, 2020) ###
 
 * Background worker support by Bertrand Drouvot
