@@ -1017,7 +1017,7 @@ PollForTasks(List *taskList)
 	int activeTaskCount = 0;
 	ListCell *taskCell = NULL;
 
-	polledTasks = (CronTask **) palloc0(taskCount * sizeof(CronTask));
+	polledTasks = (CronTask **) palloc0(taskCount * sizeof(CronTask *));
 	pollFDs = (struct pollfd *) palloc0(taskCount * sizeof(struct pollfd));
 
 	currentTime = GetCurrentTimestamp();
