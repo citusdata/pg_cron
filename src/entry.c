@@ -31,7 +31,7 @@
 
 
 typedef	enum ecode {
-	e_none, e_minute, e_hour, e_dom, e_month, e_dow,
+	e_none, e_second, e_minute, e_hour, e_dom, e_month, e_dow,
 	e_cmd, e_timespec, e_username, e_cmd_len
 } ecode_e;
 
@@ -126,6 +126,7 @@ parse_cron_entry(char *schedule)
 		if (!strcmp("reboot", cmd) || !strcmp("restart", cmd)) {
 			e->flags |= WHEN_REBOOT;
 		} else if (!strcmp("yearly", cmd) || !strcmp("annually", cmd)){
+			bit_set(e->second, 0);
 			bit_set(e->minute, 0);
 			bit_set(e->hour, 0);
 			bit_set(e->dom, 0);
@@ -133,6 +134,7 @@ parse_cron_entry(char *schedule)
 			bit_nset(e->dow, 0, (LAST_DOW-FIRST_DOW+1));
                         e->flags |= DOW_STAR;
 		} else if (!strcmp("monthly", cmd)) {
+			bit_set(e->second, 0);
 			bit_set(e->minute, 0);
 			bit_set(e->hour, 0);
 			bit_set(e->dom, 0);
@@ -140,6 +142,7 @@ parse_cron_entry(char *schedule)
 			bit_nset(e->dow, 0, (LAST_DOW-FIRST_DOW+1));
                         e->flags |= DOW_STAR;
 		} else if (!strcmp("weekly", cmd)) {
+			bit_set(e->second, 0);
 			bit_set(e->minute, 0);
 			bit_set(e->hour, 0);
 			bit_nset(e->dom, 0, (LAST_DOM-FIRST_DOM+1));
@@ -147,12 +150,14 @@ parse_cron_entry(char *schedule)
 			bit_nset(e->month, 0, (LAST_MONTH-FIRST_MONTH+1));
 			bit_nset(e->dow, 0,0);
 		} else if (!strcmp("daily", cmd) || !strcmp("midnight", cmd)) {
+			bit_set(e->second, 0);
 			bit_set(e->minute, 0);
 			bit_set(e->hour, 0);
 			bit_nset(e->dom, 0, (LAST_DOM-FIRST_DOM+1));
 			bit_nset(e->month, 0, (LAST_MONTH-FIRST_MONTH+1));
 			bit_nset(e->dow, 0, (LAST_DOW-FIRST_DOW+1));
 		} else if (!strcmp("hourly", cmd)) {
+			bit_set(e->second, 0);
 			bit_set(e->minute, 0);
 			bit_nset(e->hour, 0, (LAST_HOUR-FIRST_HOUR+1));
 			bit_nset(e->dom, 0, (LAST_DOM-FIRST_DOM+1));
@@ -165,6 +170,15 @@ parse_cron_entry(char *schedule)
 		}
 	} else {
 		Debug(DPARS, ("load_entry()...about to parse numerics\n"))
+
+		if (ch == '*')
+			e->flags |= SEC_STAR;
+		ch = get_list(e->second, FIRST_SECOND, LAST_SECOND,
+			      PPC_NULL, ch, file);
+		if (ch == EOF) {
+			ecode = e_second;
+			goto eof;
+		}
 
 		if (ch == '*')
 			e->flags |= MIN_STAR;

@@ -4,7 +4,7 @@ ALTER EXTENSION pg_cron UPDATE TO '1.4';
 SELECT extversion FROM pg_extension WHERE extname='pg_cron';
 
 -- Vacuum every day at 10:00am (GMT)
-SELECT cron.schedule('0 10 * * *', 'VACUUM');
+SELECT cron.schedule('0 0 10 * * *', 'VACUUM');
 
 -- Stop scheduling a job
 SELECT cron.unschedule(1);
@@ -18,17 +18,17 @@ SELECT cron.schedule('@restar', 'ALTER EXTENSION pg_cron UPDATE');
 SELECT cron.schedule('@restart', 'ALTER EXTENSION pg_cron UPDATE');
 
 -- Vacuum every day at 10:00am (GMT)
-SELECT cron.schedule('myvacuum', '0 10 * * *', 'VACUUM');
+SELECT cron.schedule('myvacuum', '0 0 10 * * *', 'VACUUM');
 
 SELECT jobid, jobname, schedule, command FROM cron.job ORDER BY jobid;
 
 -- Make that 11:00am (GMT)
-SELECT cron.schedule('myvacuum', '0 11 * * *', 'VACUUM');
+SELECT cron.schedule('myvacuum', '0 0 11 * * *', 'VACUUM');
 
 SELECT jobid, jobname, schedule, command FROM cron.job ORDER BY jobid;
 
 -- Make that VACUUM FULL
-SELECT cron.schedule('myvacuum', '0 11 * * *', 'VACUUM FULL');
+SELECT cron.schedule('myvacuum', '0 0 11 * * *', 'VACUUM FULL');
 
 SELECT jobid, jobname, schedule, command FROM cron.job ORDER BY jobid;
 
@@ -55,13 +55,13 @@ create user pgcron_cront with password 'pwd';
 GRANT USAGE ON SCHEMA cron TO pgcron_cront;
 
 -- Schedule a job for this user on the database that does not accept connections
-SELECT cron.schedule(job_name:='can not connect', schedule:='0 11 * * *', command:='VACUUM',database:='pgcron_dbno',username:='pgcron_cront');
+SELECT cron.schedule(job_name:='can not connect', schedule:='0 0 11 * * *', command:='VACUUM',database:='pgcron_dbno',username:='pgcron_cront');
 
 -- Create a database that does allow connections
 create database pgcron_dbyes;
 
 -- Schedule a job on the database that does accept connections for a non existing user
-SELECT cron.schedule(job_name:='user does not exist', schedule:='0 11 * * *', command:='VACUUM',database:='pgcron_dbyes',username:='pgcron_useraqwxszedc');
+SELECT cron.schedule(job_name:='user does not exist', schedule:='0 0 11 * * *', command:='VACUUM',database:='pgcron_dbyes',username:='pgcron_useraqwxszedc');
 
 -- Alter an existing job on a database that does not accept connections
 SELECT cron.alter_job(job_id:=2,database:='pgcron_dbno',username:='pgcron_cront');
@@ -70,10 +70,10 @@ SELECT cron.alter_job(job_id:=2,database:='pgcron_dbno',username:='pgcron_cront'
 SET SESSION AUTHORIZATION pgcron_cront;
 
 -- Create a job
-SELECT cron.schedule('My vacuum', '0 11 * * *', 'VACUUM');
+SELECT cron.schedule('My vacuum', '0 0 11 * * *', 'VACUUM');
 
 -- Create a job for another user
-SELECT cron.schedule(job_name:='his vacuum', schedule:='0 11 * * *', command:='VACUUM',username:='anotheruser');
+SELECT cron.schedule(job_name:='his vacuum', schedule:='0 0 11 * * *', command:='VACUUM',username:='anotheruser');
 
 -- Change the username of an existing job that the user own
 select cron.alter_job(job_id:=6,username:='anotheruser');
@@ -97,7 +97,7 @@ select cron.alter_job(job_id:=2,username:='pgcron_cront');
 SELECT username FROM cron.job where jobid=2;
 
 -- Create a job for another user
-SELECT cron.schedule(job_name:='his vacuum', schedule:='0 11 * * *', command:='VACUUM',username:='pgcron_cront');
+SELECT cron.schedule(job_name:='his vacuum', schedule:='0 0 11 * * *', command:='VACUUM',username:='pgcron_cront');
 SELECT username FROM cron.job where jobid=7;
 
 -- cleaning

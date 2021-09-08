@@ -124,9 +124,9 @@ void CronBackgroundWorker(Datum arg);
 static void StartAllPendingRuns(List *taskList, TimestampTz currentTime);
 static void StartPendingRuns(CronTask *task, ClockProgress clockProgress,
 							 TimestampTz lastMinute, TimestampTz currentTime);
-static int MinutesPassed(TimestampTz startTime, TimestampTz stopTime);
-static TimestampTz TimestampMinuteStart(TimestampTz time);
-static TimestampTz TimestampMinuteEnd(TimestampTz time);
+static int SecondsPassed(TimestampTz startTime, TimestampTz stopTime);
+static TimestampTz TimestampSecondStart(TimestampTz time);
+static TimestampTz TimestampSecondEnd(TimestampTz time);
 static bool ShouldRunTask(entry *schedule, TimestampTz currentMinute,
 						  bool doWild, bool doNonWild);
 
@@ -661,7 +661,7 @@ StartAllPendingRuns(List *taskList, TimestampTz currentTime)
 {
 	static TimestampTz lastMinute = 0;
 
-	int minutesPassed = 0;
+	int secondsPassed = 0;
 	ListCell *taskCell = NULL;
 	ClockProgress clockProgress;
 
@@ -685,33 +685,33 @@ StartAllPendingRuns(List *taskList, TimestampTz currentTime)
 
 	if (lastMinute == 0)
 	{
-		lastMinute = TimestampMinuteStart(currentTime);
+		lastMinute = TimestampSecondStart(currentTime);
 	}
 
-	minutesPassed = MinutesPassed(lastMinute, currentTime);
-	if (minutesPassed == 0)
+	secondsPassed = SecondsPassed(lastMinute, currentTime);
+	if (secondsPassed == 0)
 	{
 		/* wait for new minute */
 		return;
 	}
 
 	/* use Vixie cron logic for clock jumps */
-	if (minutesPassed > (3*MINUTE_COUNT))
+	if (secondsPassed > (3*MINUTE_COUNT*SECOND_COUNT))
 	{
 		/* clock jumped forward by more than 3 hours */
 		clockProgress = CLOCK_CHANGE;
 	}
-	else if (minutesPassed > 5)
+	else if (secondsPassed > (5*SECOND_COUNT))
 	{
 		/* clock went forward by more than 5 minutes (DST?) */
 		clockProgress = CLOCK_JUMP_FORWARD;
 	}
-	else if (minutesPassed > 0)
+	else if (secondsPassed > 0)
 	{
 		/* clock went forward by 1-5 minutes */
 		clockProgress = CLOCK_PROGRESSED;
 	}
-	else if (minutesPassed > -(3*MINUTE_COUNT))
+	else if (secondsPassed > -(3*MINUTE_COUNT*SECOND_COUNT))
 	{
 		/* clock jumped backwards by less than 3 hours (DST?) */
 		clockProgress = CLOCK_JUMP_BACKWARD;
@@ -747,7 +747,7 @@ StartAllPendingRuns(List *taskList, TimestampTz currentTime)
 	 */
 	if (clockProgress != CLOCK_JUMP_BACKWARD)
 	{
-		lastMinute = TimestampMinuteStart(currentTime);
+		lastMinute = TimestampSecondStart(currentTime);
 	}
 }
 
@@ -763,21 +763,21 @@ StartPendingRuns(CronTask *task, ClockProgress clockProgress,
 	CronJob *cronJob = GetCronJob(task->jobId);
 	entry *schedule = &cronJob->schedule;
 	TimestampTz virtualTime = lastMinute;
-	TimestampTz currentMinute = TimestampMinuteStart(currentTime);
+	TimestampTz currentMinute = TimestampSecondStart(currentTime);
 
 	switch (clockProgress)
 	{
 		case CLOCK_PROGRESSED:
 		{
 			/*
-			 * case 1: minutesPassed is a small positive number
+			 * case 1: secondsPassed is a small positive number
 			 * run jobs for each virtual minute until caught up.
 			 */
 
 			do
 			{
 				virtualTime = TimestampTzPlusMilliseconds(virtualTime,
-														  60*1000);
+														  1000);
 
 				if (ShouldRunTask(schedule, virtualTime, true, true))
 				{
@@ -792,7 +792,7 @@ StartPendingRuns(CronTask *task, ClockProgress clockProgress,
 		case CLOCK_JUMP_FORWARD:
 		{
 			/*
-			 * case 2: minutesPassed is a medium-sized positive number,
+			 * case 2: secondsPassed is a medium-sized positive number,
 			 * for example because we went to DST run wildcard
 			 * jobs once, then run any fixed-time jobs that would
 			 * otherwise be skipped if we use up our minute
@@ -805,7 +805,7 @@ StartPendingRuns(CronTask *task, ClockProgress clockProgress,
 			do
 			{
 				virtualTime = TimestampTzPlusMilliseconds(virtualTime,
-														  60*1000);
+														  1000);
 
 				if (ShouldRunTask(schedule, virtualTime, false, true))
 				{
@@ -858,38 +858,35 @@ StartPendingRuns(CronTask *task, ClockProgress clockProgress,
 
 
 /*
- * MinutesPassed returns the number of minutes between startTime and
+ * SecondsPassed returns the number of seconds between startTime and
  * stopTime rounded down to the closest integer.
  */
 static int
-MinutesPassed(TimestampTz startTime, TimestampTz stopTime)
+SecondsPassed(TimestampTz startTime, TimestampTz stopTime)
 {
 	int microsPassed = 0;
 	long secondsPassed = 0;
-	int minutesPassed = 0;
 
 	TimestampDifference(startTime, stopTime,
 						&secondsPassed, &microsPassed);
 
-	minutesPassed = secondsPassed / 60;
-
-	return minutesPassed;
+	return secondsPassed;
 }
 
 
 /*
- * TimestampMinuteEnd returns the timestamp at the start of the
- * current minute for the given time.
+ * TimestampSecondStart returns the timestamp at the start of the
+ * current second for the given time.
  */
 static TimestampTz
-TimestampMinuteStart(TimestampTz time)
+TimestampSecondStart(TimestampTz time)
 {
 	TimestampTz result = 0;
 
 #ifdef HAVE_INT64_TIMESTAMP
-	result = time - time % 60000000;
+	result = time - time % 1000000;
 #else
-	result = (long) time - (long) time % 60;
+	result = (long) time - (long) time % 1;
 #endif
 
 	return result;
@@ -897,18 +894,18 @@ TimestampMinuteStart(TimestampTz time)
 
 
 /*
- * TimestampMinuteEnd returns the timestamp at the start of the
- * next minute from the given time.
+ * TimestampSecondEnd returns the timestamp at the start of the
+ * next second from the given time.
  */
 static TimestampTz
-TimestampMinuteEnd(TimestampTz time)
+TimestampSecondEnd(TimestampTz time)
 {
-	TimestampTz result = TimestampMinuteStart(time);
+	TimestampTz result = TimestampSecondStart(time);
 
 #ifdef HAVE_INT64_TIMESTAMP
-	result += 60000000;
+	result += 1000000;
 #else
-	result += 60;
+	result += 1;
 #endif
 
 	return result;
@@ -926,20 +923,21 @@ ShouldRunTask(entry *schedule, TimestampTz currentTime, bool doWild,
 	time_t currentTime_t = timestamptz_to_time_t(currentTime);
 	struct tm *tm = gmtime(&currentTime_t);
 
+	int second = tm->tm_sec -FIRST_SECOND;
 	int minute = tm->tm_min -FIRST_MINUTE;
 	int hour = tm->tm_hour -FIRST_HOUR;
 	int dayOfMonth = tm->tm_mday -FIRST_DOM;
 	int month = tm->tm_mon +1 -FIRST_MONTH;
 	int dayOfWeek = tm->tm_wday -FIRST_DOW;
 
-	if (bit_test(schedule->minute, minute) &&
+	if (bit_test(schedule->second, second) && bit_test(schedule->minute, minute) &&
 	    bit_test(schedule->hour, hour) &&
 	    bit_test(schedule->month, month) &&
 	    ( ((schedule->flags & DOM_STAR) || (schedule->flags & DOW_STAR))
 	      ? (bit_test(schedule->dow,dayOfWeek) && bit_test(schedule->dom,dayOfMonth))
 	      : (bit_test(schedule->dow,dayOfWeek) || bit_test(schedule->dom,dayOfMonth)))) {
-		if ((doNonWild && !(schedule->flags & (MIN_STAR|HR_STAR)))
-		    || (doWild && (schedule->flags & (MIN_STAR|HR_STAR))))
+		if ((doNonWild && !(schedule->flags & (SEC_STAR | MIN_STAR|HR_STAR)))
+		    || (doWild && (schedule->flags & (SEC_STAR |MIN_STAR|HR_STAR))))
 		{
 			return true;
 		}
@@ -1025,7 +1023,7 @@ PollForTasks(List *taskList)
 	/*
 	 * At the latest, wake up when the next minute starts.
 	 */
-	nextEventTime = TimestampMinuteEnd(currentTime);
+	nextEventTime = TimestampSecondEnd(currentTime);
 
 	foreach(taskCell, taskList)
 	{
