@@ -68,6 +68,9 @@ SELECT cron.schedule(job_name:='user does not exist', schedule:='0 11 * * *', co
 -- Alter an existing job on a database that does not accept connections
 SELECT cron.alter_job(job_id:=2,database:='pgcron_dbno',username:='pgcron_cront');
 
+-- Make sure pgcron_cront can execute alter_job
+GRANT EXECUTE ON FUNCTION cron.alter_job(bigint,text,text,text,text,boolean) TO public;
+
 -- Second as non superuser
 SET SESSION AUTHORIZATION pgcron_cront;
 
