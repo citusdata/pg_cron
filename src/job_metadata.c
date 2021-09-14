@@ -104,6 +104,7 @@ static HTAB *CronJobHash = NULL;
 static Oid CachedCronJobRelationId = InvalidOid;
 bool CronJobCacheValid = false;
 char *CronHost = "localhost";
+bool EnableSuperuserJobs = true;
 
 
 /*
@@ -285,6 +286,15 @@ ScheduleCronJob(text *scheduleText, text *commandText, text *databaseText,
 	else
 	/* use the GUC */
 		database_name = CronTableDatabaseName;
+
+	/* first do a crude check to see whether superuser jobs are allowed */
+	if (!EnableSuperuserJobs && superuser_arg(userIdcheckacl))
+	{
+		ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+						errmsg("cannot schedule jobs as superuser"),
+						errdetail("Scheduling jobs as superuser is disallowed when "
+								  "cron.enable_superuser_jobs is set to off.")));
+	}
 
 	/* ensure the user that is used in the job can connect to the database */
 	aclresult = pg_database_aclcheck(get_database_oid(database_name, false),
@@ -842,11 +852,29 @@ LoadCronJobList(void)
 	{
 		MemoryContext oldContext = NULL;
 		CronJob *job = NULL;
+		Oid jobOwnerId = InvalidOid;
 
 		oldContext = MemoryContextSwitchTo(CronJobContext);
 
 		job = TupleToCronJob(tupleDescriptor, heapTuple);
-		jobList = lappend(jobList, job);
+
+		jobOwnerId = get_role_oid(job->userName, false);
+		if (!EnableSuperuserJobs && superuser_arg(jobOwnerId))
+		{
+			/*
+			 * Someone inserted a superuser into the metadata. Skip over the
+			 * job when cron.enable_superuser_jobs is disabled. The memory
+			 * will be cleaned up when CronJobContext is reset.
+			 */
+			ereport(WARNING, (errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+							  errmsg("skipping job " INT64_FORMAT " since superuser jobs "
+									 "are currently disallowed",
+									 job->jobId)));
+		}
+		else
+		{
+			jobList = lappend(jobList, job);
+		}
 
 		MemoryContextSwitchTo(oldContext);
 
@@ -1211,7 +1239,17 @@ AlterJob(int64 jobId, text *scheduleText, text *commandText, text *databaseText,
 		userIdcheckacl = GetRoleOidIfCanLogin(username);
 	}
 	else
+	{
 		username = currentuser;
+	}
+
+	if (!EnableSuperuserJobs && superuser_arg(userIdcheckacl))
+	{
+		ereport(ERROR, (errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+						errmsg("cannot schedule jobs as superuser"),
+						errdetail("Scheduling jobs as superuser is disallowed when "
+								  "cron.enable_superuser_jobs is set to off.")));
+	}
 
 	/* add the fields to be updated */
 	/* database has been provided */

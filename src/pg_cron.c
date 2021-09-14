@@ -232,6 +232,16 @@ _PG_init(void)
 		GUC_SUPERUSER_ONLY,
 		NULL, NULL, NULL);
 
+	DefineCustomBoolVariable(
+		"cron.enable_superuser_jobs",
+		gettext_noop("Allow jobs to be scheduled as superuser"),
+		NULL,
+		&EnableSuperuserJobs,
+		true,
+		PGC_USERSET,
+		GUC_SUPERUSER_ONLY,
+		NULL, NULL, NULL);
+
 	DefineCustomStringVariable(
 		"cron.host",
 		gettext_noop("Hostname to connect to postgres."),
