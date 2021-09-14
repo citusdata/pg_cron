@@ -138,7 +138,7 @@ static void ManageCronTasks(List *taskList, TimestampTz currentTime);
 static void ManageCronTask(CronTask *task, TimestampTz currentTime);
 static void ExecuteSqlString(const char *sql);
 static void GetTaskFeedback(PGresult *result, CronTask *task);
-static void GetBgwTaskFeedback(shm_mq_handle *responseq, CronTask *task);
+static void GetBgwTaskFeedback(shm_mq_handle *responseq, CronTask *task, bool running);
 
 static bool jobCanceled(CronTask *task);
 static bool jobStartupTimeout(CronTask *task, TimestampTz currentTime);
@@ -1664,10 +1664,6 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 				break;
 			}
 
-			/* still waiting for job to complete */
-			if (GetBackgroundWorkerPid(&task->handle, &pid) != BGWH_STOPPED)
-				break;
-
 			toc = shm_toc_attach(PG_CRON_MAGIC, dsm_segment_address(task->seg));
 			#if PG_VERSION_NUM < 100000
 				mq = shm_toc_lookup(toc, PG_CRON_KEY_QUEUE);
@@ -1675,7 +1671,16 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 				mq = shm_toc_lookup(toc, PG_CRON_KEY_QUEUE, false);
 			#endif
 			responseq = shm_mq_attach(mq, task->seg, NULL);
-			GetBgwTaskFeedback(responseq, task);
+
+			/* still waiting for job to complete */
+			if (GetBackgroundWorkerPid(&task->handle, &pid) != BGWH_STOPPED)
+			{
+				GetBgwTaskFeedback(responseq, task, true);
+				shm_mq_detach(responseq);
+				break;
+			}
+
+			GetBgwTaskFeedback(responseq, task, false);
 
 			task->state = CRON_TASK_DONE;
 			dsm_detach(task->seg);
@@ -1840,7 +1845,7 @@ GetTaskFeedback(PGresult *result, CronTask *task)
 }
 
 static void
-GetBgwTaskFeedback(shm_mq_handle *responseq, CronTask *task)
+GetBgwTaskFeedback(shm_mq_handle *responseq, CronTask *task, bool running)
 {
 
 	TimestampTz end_time;
@@ -1887,9 +1892,10 @@ GetBgwTaskFeedback(shm_mq_handle *responseq, CronTask *task)
 
 						if (edata.elevel >= ERROR)
 							UpdateJobRunDetail(task->runId, NULL, GetCronStatus(CRON_STATUS_FAILED), display_msg.data, NULL, &end_time);
+						else if (running)
+							UpdateJobRunDetail(task->runId, NULL, NULL, display_msg.data, NULL, NULL);
 						else
 							UpdateJobRunDetail(task->runId, NULL, GetCronStatus(CRON_STATUS_SUCCEEDED), display_msg.data, NULL, &end_time);
-
 					}
 
 					ereport(LOG, (errmsg("cron job " INT64_FORMAT ": %s",
