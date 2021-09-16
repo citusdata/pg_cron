@@ -12,6 +12,7 @@ SELECT extversion FROM pg_extension WHERE extname='pg_cron';
  1.4
 (1 row)
 
+SET cron.enable_superuser_jobs TO on;
 -- Vacuum every day at 10:00am (GMT)
 SELECT cron.schedule('0 10 * * *', 'VACUUM');
  schedule 
@@ -187,6 +188,27 @@ SELECT username FROM cron.job where jobid=7;
    username   
 --------------
  pgcron_cront
+(1 row)
+
+-- Try to schedule a job as superuser when it is not allowed
+SET cron.enable_superuser_jobs TO off;
+SELECT cron.schedule(job_name:='disallowed-superuser', schedule:='* * * * *', command:='drop database pg_crondbno');
+ERROR:  cannot schedule jobs as superuser
+DETAIL:  Scheduling jobs as superuser is disallowed when cron.enable_superuser_jobs is set to off.
+SELECT cron.alter_job(7, username := current_user);
+ERROR:  cannot schedule jobs as superuser
+DETAIL:  Scheduling jobs as superuser is disallowed when cron.enable_superuser_jobs is set to off.
+-- Scheduling as other users is allowed as superuser
+SELECT cron.schedule(job_name:='more vacuum', schedule:='0 12 * * *', command:='VACUUM', username:='pgcron_cront');
+ schedule 
+----------
+        8
+(1 row)
+
+SELECT cron.alter_job(7, username := 'pgcron_cront');
+ alter_job 
+-----------
+ 
 (1 row)
 
 -- cleaning
