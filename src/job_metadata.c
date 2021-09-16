@@ -485,14 +485,17 @@ cron_schedule_named(PG_FUNCTION_ARGS)
 	else
 		commandText = PG_GETARG_TEXT_P(2);
 
-	if (!PG_ARGISNULL(3))
-		databaseText = PG_GETARG_TEXT_P(3);
+	if (PG_NARGS() > 3)
+	{
+		if (!PG_ARGISNULL(3))
+			databaseText = PG_GETARG_TEXT_P(3);
 
-	if (!PG_ARGISNULL(4))
-		usernameText = PG_GETARG_TEXT_P(4);
+		if (!PG_ARGISNULL(4))
+			usernameText = PG_GETARG_TEXT_P(4);
 
-	if (!PG_ARGISNULL(5))
-		active = PG_GETARG_BOOL(5);
+		if (!PG_ARGISNULL(5))
+			active = PG_GETARG_BOOL(5);
+	}
 
 	jobId = ScheduleCronJob(scheduleText, commandText, databaseText,
 							usernameText, active, jobnameText);

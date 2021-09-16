@@ -110,12 +110,12 @@ revoke connect on database pgcron_dbno from public;
 create user pgcron_cront with password 'pwd';
 GRANT USAGE ON SCHEMA cron TO pgcron_cront;
 -- Schedule a job for this user on the database that does not accept connections
-SELECT cron.schedule(job_name:='can not connect', schedule:='0 11 * * *', command:='VACUUM',database:='pgcron_dbno',username:='pgcron_cront');
+SELECT cron.schedule_in_database(job_name:='can not connect', schedule:='0 11 * * *', command:='VACUUM',database:='pgcron_dbno',username:='pgcron_cront');
 ERROR:  User pgcron_cront does not have CONNECT privilege on pgcron_dbno
 -- Create a database that does allow connections
 create database pgcron_dbyes;
 -- Schedule a job on the database that does accept connections for a non existing user
-SELECT cron.schedule(job_name:='user does not exist', schedule:='0 11 * * *', command:='VACUUM',database:='pgcron_dbyes',username:='pgcron_useraqwxszedc');
+SELECT cron.schedule_in_database(job_name:='user does not exist', schedule:='0 11 * * *', command:='VACUUM',database:='pgcron_dbyes',username:='pgcron_useraqwxszedc');
 ERROR:  role "pgcron_useraqwxszedc" does not exist
 -- Alter an existing job on a database that does not accept connections
 SELECT cron.alter_job(job_id:=2,database:='pgcron_dbno',username:='pgcron_cront');
@@ -132,8 +132,8 @@ SELECT cron.schedule('My vacuum', '0 11 * * *', 'VACUUM');
 (1 row)
 
 -- Create a job for another user
-SELECT cron.schedule(job_name:='his vacuum', schedule:='0 11 * * *', command:='VACUUM',username:='anotheruser');
-ERROR:  must be superuser to create a job for another role
+SELECT cron.schedule_in_database(job_name:='his vacuum', schedule:='0 11 * * *', command:='VACUUM',database:=current_database(),username:='anotheruser');
+ERROR:  permission denied for function schedule_in_database
 -- Change the username of an existing job that the user own
 select cron.alter_job(job_id:=6,username:='anotheruser');
 ERROR:  must be superuser to alter username
@@ -178,10 +178,10 @@ SELECT username FROM cron.job where jobid=2;
 (1 row)
 
 -- Create a job for another user
-SELECT cron.schedule(job_name:='his vacuum', schedule:='0 11 * * *', command:='VACUUM',username:='pgcron_cront');
- schedule 
-----------
-        7
+SELECT cron.schedule_in_database(job_name:='his vacuum', schedule:='0 11 * * *', command:='VACUUM',database:=current_database(), username:='pgcron_cront');
+ schedule_in_database 
+----------------------
+                    7
 (1 row)
 
 SELECT username FROM cron.job where jobid=7;
@@ -199,10 +199,10 @@ SELECT cron.alter_job(7, username := current_user);
 ERROR:  cannot schedule jobs as superuser
 DETAIL:  Scheduling jobs as superuser is disallowed when cron.enable_superuser_jobs is set to off.
 -- Scheduling as other users is allowed as superuser
-SELECT cron.schedule(job_name:='more vacuum', schedule:='0 12 * * *', command:='VACUUM', username:='pgcron_cront');
- schedule 
-----------
-        8
+SELECT cron.schedule_in_database(job_name:='more vacuum', schedule:='0 12 * * *', command:='VACUUM', database:=current_database(), username:='pgcron_cront');
+ schedule_in_database 
+----------------------
+                    8
 (1 row)
 
 SELECT cron.alter_job(7, username := 'pgcron_cront');
