@@ -371,6 +371,7 @@ GetRoleOidIfCanLogin(char *username)
 {
 	HeapTuple   roletup;
 	Form_pg_authid rform;
+	Oid roleOid = InvalidOid;
 
 	roletup = SearchSysCache1(AUTHNAME, PointerGetDatum(username));
 	if (!HeapTupleIsValid(roletup))
@@ -386,8 +387,14 @@ GetRoleOidIfCanLogin(char *username)
 						username),
 				 errdetail("Jobs may only be run by roles that have the LOGIN attribute.")));
 
+#if (PG_VERSION_NUM < 120000)
+	roleOid = HeapTupleGetOid(roletup);
+#else
+	roleOid = rform->oid;
+#endif
+
 	ReleaseSysCache(roletup);
-	return rform->oid;
+	return roleOid;
 }
 
 /*
