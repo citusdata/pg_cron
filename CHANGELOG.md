@@ -1,3 +1,7 @@
+### pg_cron v1.4.1 (September 25, 2021) ###
+
+* Fixes PostgreSQL 11- support
+
 ### pg_cron v1.4.0 (September 16, 2021) ###
 
 * Adds a cron.alter_job function to change job properties, by Bertrand Drouvot
