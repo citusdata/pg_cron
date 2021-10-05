@@ -38,3 +38,7 @@ lib*.pc
 /src/Makefile.custom
 
 pg_cron--?.?.sql
+
+log/
+results/
+src/*.bc
