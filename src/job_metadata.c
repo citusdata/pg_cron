@@ -1359,7 +1359,7 @@ AlterJob(int64 jobId, text *scheduleText, text *commandText, text *databaseText,
 	pfree(querybuf.data);
 
 	if (SPI_processed <= 0)
-		elog(ERROR, "Job %ld does not exist or you don't own it", jobId);
+		elog(ERROR, "Job " INT64_FORMAT " does not exist or you don't own it", jobId);
 
 	SPI_finish();
 	SetUserIdAndSecContext(savedUserId, savedSecurityContext);
