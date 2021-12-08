@@ -134,7 +134,7 @@ The following table keeps track of which of the major managed Postgres services 
 | [Citus Cloud](https://www.citusdata.com/product/cloud)  | :heavy_check_mark: |
 | [Crunchy Bridge](https://www.crunchydata.com/products/crunchy-bridge/?ref=producthunt) | :heavy_check_mark: |
 | [DigitalOcean](https://www.digitalocean.com/products/managed-databases/) | :heavy_check_mark: |
-| [Google Cloud](https://cloud.google.com/sql/docs/postgres/) | :x:      |
+| [Google Cloud](https://cloud.google.com/sql/postgresql/) | :heavy_check_mark: |
 | [Heroku](https://elements.heroku.com/addons/heroku-postgresql) | :x: | |
 | [ScaleGrid](https://scalegrid.io/postgresql.html) | :heavy_check_mark:  |
 | [Scaleway](https://www.scaleway.com/en/database/) | :heavy_check_mark:  |
