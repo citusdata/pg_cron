@@ -103,6 +103,9 @@ PG_MODULE_MAGIC;
 #define PG_CRON_KEY_QUEUE		3
 #define PG_CRON_NKEYS			4
 
+/* refresh metadata at least once per minute */
+#define FORCE_REFRESH_AFTER_MS  60000
+
 /* ways in which the clock can change between main loop iterations */
 typedef enum
 {
@@ -552,6 +555,7 @@ pg_cron_background_worker_sigterm(SIGNAL_ARGS)
 void
 PgCronLauncherMain(Datum arg)
 {
+	TimestampTz lastRefreshTime = 0;
 	MemoryContext CronLoopContext = NULL;
 	struct rlimit limit;
 
@@ -626,13 +630,30 @@ PgCronLauncherMain(Datum arg)
 	while (!got_sigterm)
 	{
 		List *taskList = NIL;
-		TimestampTz currentTime = 0;
+		TimestampTz currentTime = GetCurrentTimestamp();
 
+		/*
+		 * Check for invalidations (e.g. from concurrent cron.schedule calls),
+		 * this may cause InvalidateJobCacheCallback to set CronJobCacheValid
+		 * false.
+		 *
+		 * We avoid taking any locks here to never block the scheduler. That
+		 * does create a race condition: If commit takes a long time, we might
+		 * receive an invalidation before the corresponding cron.job change
+		 * becomes fully visible. In that case, we might never refresh metadata
+		 * again unless there is a SIGHUP or another change to cron.job.
+		 *
+		 * To mitigate that, we refresh metadata at least once per minute.
+		 */
 		AcceptInvalidationMessages();
 
-		if (!CronJobCacheValid)
+		if (!CronJobCacheValid ||
+			TimestampDifferenceExceeds(lastRefreshTime, currentTime,
+									   FORCE_REFRESH_AFTER_MS))
 		{
 			RefreshTaskHash();
+
+			lastRefreshTime = currentTime;
 		}
 
 		if (CronReloadConfig)
@@ -645,7 +666,6 @@ PgCronLauncherMain(Datum arg)
 		}
 
 		taskList = CurrentTaskList();
-		currentTime = GetCurrentTimestamp();
 
 		StartAllPendingRuns(taskList, currentTime);
 
