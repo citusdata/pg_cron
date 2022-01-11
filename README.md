@@ -88,11 +88,18 @@ make && sudo PATH=$PATH make install
 
 To start the pg_cron background worker when PostgreSQL starts, you need to add pg_cron to `shared_preload_libraries` in postgresql.conf. Note that pg_cron does not run any jobs as a long a server is in [hot standby](https://www.postgresql.org/docs/current/static/hot-standby.html) mode, but it automatically starts when the server is promoted.
 
-By default, the pg_cron background worker expects its metadata tables to be created in the "postgres" database. However, you can configure this by setting the `cron.database_name` configuration parameter in postgresql.conf.
-
 ```
-# add to postgresql.conf:
+# add to postgresql.conf
+
+# required to load pg_cron background worker on start-up
 shared_preload_libraries = 'pg_cron'
+```
+
+By default, the pg_cron background worker expects its metadata tables to be created in the "postgres" database. However, you can configure this by setting the `cron.database_name` configuration parameter in postgresql.conf.
+```
+# add to postgresql.conf
+
+# optionally, specify the database in which the pg_cron background worker should run (defaults to postgres) 
 cron.database_name = 'postgres'
 ```
 
