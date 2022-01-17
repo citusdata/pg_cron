@@ -326,12 +326,20 @@ _PG_init(void)
 static void
 pg_cron_sigterm(SIGNAL_ARGS)
 {
+	int			save_errno = errno;
+
 	got_sigterm = true;
 
-	if (MyProc != NULL)
+	SetLatch(MyLatch);
+
+	if (!proc_exit_inprogress)
 	{
-		SetLatch(&MyProc->procLatch);
+		InterruptPending = true;
+		ProcDiePending = true;
 	}
+	
+	ProcessInterrupts();
+	errno = save_errno;
 }
 
 
@@ -345,10 +353,7 @@ pg_cron_sighup(SIGNAL_ARGS)
 	CronJobCacheValid = false;
 	CronReloadConfig = true;
 
-	if (MyProc != NULL)
-	{
-		SetLatch(&MyProc->procLatch);
-	}
+	SetLatch(MyLatch);
 }
 
 /*
@@ -540,7 +545,7 @@ pg_cron_background_worker_sigterm(SIGNAL_ARGS)
 		InterruptPending = true;
 		ProcDiePending = true;
 	}
-
+	ProcessInterrupts();
 	errno = save_errno;
 }
 
