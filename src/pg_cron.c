@@ -332,6 +332,13 @@ pg_cron_sigterm(SIGNAL_ARGS)
 	{
 		SetLatch(&MyProc->procLatch);
 	}
+
+	if (!proc_exit_inprogress)
+	{
+		InterruptPending = true;
+		ProcDiePending = true;
+	}
+	CHECK_FOR_INTERRUPTS();
 }
 
 
