@@ -1755,6 +1755,8 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 			 */
 			if (job != NULL && job->active)
 				InitializeCronTask(task, jobId);
+			else
+				task->state = CRON_TASK_WAITING;
 
 			/*
 			 * We keep the number of runs that should have started while
