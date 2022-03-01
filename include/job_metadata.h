@@ -42,6 +42,8 @@ typedef struct CronJob
 	Name jobName;
 } CronJob;
 
+#define MODE_SINGLE 	"single"
+#define MODE_TIMING 	"timing"
 
 /* global settings */
 extern char *CronHost;
@@ -61,5 +63,11 @@ extern void UpdateJobRunDetail(int64 runId, int32 *job_pid, char *status, char *
 extern int64 NextRunId(void);
 extern void MarkPendingRunsAsFailed(void);
 extern char *GetCronStatus(CronStatus cronstatus);
+
+extern void queryModeFromCronExt(int64 jobid, char *mode);
+extern void queryZoneFromCronExt(int64 jobid, int *tmzone);
+extern void updateCronActive(int64 jobid, char *active);
+extern void keepDataFromCronRun(void);
+
 
 #endif

@@ -127,6 +127,10 @@ typedef int time_min;
 
 #define SECONDS_PER_MINUTE 60
 
+#define	FIRST_SECOND	0
+#define	LAST_SECOND	59
+#define	SECOND_COUNT	(LAST_SECOND - FIRST_SECOND + 1)
+
 #define	FIRST_MINUTE	0
 #define	LAST_MINUTE	59
 #define	MINUTE_COUNT	(LAST_MINUTE - FIRST_MINUTE + 1)
@@ -160,6 +164,7 @@ typedef	struct _entry {
 	gid_t		gid;
 	char		**envp;
 	char		*cmd;
+	bitstr_t	bit_decl(second, SECOND_COUNT);
 	bitstr_t	bit_decl(minute, MINUTE_COUNT);
 	bitstr_t	bit_decl(hour,   HOUR_COUNT);
 	bitstr_t	bit_decl(dom,    DOM_COUNT);
@@ -171,6 +176,7 @@ typedef	struct _entry {
 #define	WHEN_REBOOT	0x04
 #define MIN_STAR	0x08
 #define HR_STAR		0x10
+#define SEC_STAR	0x20
 } entry;
 
 			/* the crontab database will be a list of the

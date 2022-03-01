@@ -122,13 +122,15 @@ void PgCronLauncherMain(Datum arg);
 void CronBackgroundWorker(Datum arg);
 
 static void StartAllPendingRuns(List *taskList, TimestampTz currentTime);
-static void StartPendingRuns(CronTask *task, ClockProgress clockProgress,
-							 TimestampTz lastMinute, TimestampTz currentTime);
+static void StartPendingRuns(CronTask *task, TimestampTz currentTime);
+static int SecondsPassed(TimestampTz startTime, TimestampTz stopTime);
+static TimestampTz TimestampSecondStart(TimestampTz time);
 static int MinutesPassed(TimestampTz startTime, TimestampTz stopTime);
 static TimestampTz TimestampMinuteStart(TimestampTz time);
 static TimestampTz TimestampMinuteEnd(TimestampTz time);
-static bool ShouldRunTask(entry *schedule, TimestampTz currentMinute,
+static bool ShouldRunTask(CronTask *task, entry *schedule, TimestampTz currentMinute,
 						  bool doWild, bool doNonWild);
+static bool isSetSecondCfg(entry *schedule);
 
 static void WaitForCronTasks(List *taskList);
 static void WaitForLatch(int timeoutMs);
@@ -181,6 +183,9 @@ static const struct config_enum_entry cron_message_level_options[] = {
 };
 
 static const char *cron_error_severity(int elevel);
+static TimestampTz g_lastSecond = 0;
+static TimestampTz g_lastMinute = 0;
+static TimestampTz g_lastKeepRunDetailes = 0;
 
 /*
  * _PG_init gets called when the extension is loaded.
@@ -674,11 +679,7 @@ PgCronLauncherMain(Datum arg)
 static void
 StartAllPendingRuns(List *taskList, TimestampTz currentTime)
 {
-	static TimestampTz lastMinute = 0;
-
-	int minutesPassed = 0;
 	ListCell *taskCell = NULL;
-	ClockProgress clockProgress;
 
 	if (!RebootJobsScheduled)
 	{
@@ -698,45 +699,6 @@ StartAllPendingRuns(List *taskList, TimestampTz currentTime)
 		RebootJobsScheduled = true;
 	}
 
-	if (lastMinute == 0)
-	{
-		lastMinute = TimestampMinuteStart(currentTime);
-	}
-
-	minutesPassed = MinutesPassed(lastMinute, currentTime);
-	if (minutesPassed == 0)
-	{
-		/* wait for new minute */
-		return;
-	}
-
-	/* use Vixie cron logic for clock jumps */
-	if (minutesPassed > (3*MINUTE_COUNT))
-	{
-		/* clock jumped forward by more than 3 hours */
-		clockProgress = CLOCK_CHANGE;
-	}
-	else if (minutesPassed > 5)
-	{
-		/* clock went forward by more than 5 minutes (DST?) */
-		clockProgress = CLOCK_JUMP_FORWARD;
-	}
-	else if (minutesPassed > 0)
-	{
-		/* clock went forward by 1-5 minutes */
-		clockProgress = CLOCK_PROGRESSED;
-	}
-	else if (minutesPassed > -(3*MINUTE_COUNT))
-	{
-		/* clock jumped backwards by less than 3 hours (DST?) */
-		clockProgress = CLOCK_JUMP_BACKWARD;
-	}
-	else
-	{
-		/* clock jumped backwards 3 hours or more */
-		clockProgress = CLOCK_CHANGE;
-	}
-
 	foreach(taskCell, taskList)
 	{
 		CronTask *task = (CronTask *) lfirst(taskCell);
@@ -751,18 +713,25 @@ StartAllPendingRuns(List *taskList, TimestampTz currentTime)
 			continue;
 		}
 
-		StartPendingRuns(task, clockProgress, lastMinute, currentTime);
+		StartPendingRuns(task, currentTime);
 	}
 
-	/*
-	 * If the clock jump backwards then we avoid repeating the fixed-time
-	 * tasks by preserving the last minute from before the clock jump,
-	 * until the clock has caught up (clockProgress will be
-	 * CLOCK_JUMP_BACKWARD until then).
+	/* update time start point
 	 */
-	if (clockProgress != CLOCK_JUMP_BACKWARD)
+	g_lastSecond = TimestampSecondStart(currentTime);
+	g_lastMinute = TimestampMinuteStart(currentTime);
+
+	/* delete earliest data from cron.job_run_details where raw > 100000 every 5 seconds
+	 */
+	if (0 == g_lastKeepRunDetailes)
 	{
-		lastMinute = TimestampMinuteStart(currentTime);
+		g_lastKeepRunDetailes = currentTime;
+	}
+
+	if (10000000 <= (currentTime - g_lastKeepRunDetailes))
+	{
+		keepDataFromCronRun();
+		g_lastKeepRunDetailes = currentTime;
 	}
 }
 
@@ -772,13 +741,109 @@ StartAllPendingRuns(List *taskList, TimestampTz currentTime)
  * should start, taking clock changes into consideration.
  */
 static void
-StartPendingRuns(CronTask *task, ClockProgress clockProgress,
-				 TimestampTz lastMinute, TimestampTz currentTime)
+StartPendingRuns(CronTask *task, TimestampTz currentTime)
 {
 	CronJob *cronJob = GetCronJob(task->jobId);
 	entry *schedule = &cronJob->schedule;
-	TimestampTz virtualTime = lastMinute;
-	TimestampTz currentMinute = TimestampMinuteStart(currentTime);
+	TimestampTz virtualTime;
+	TimestampTz currentTimeStart;
+	ClockProgress clockProgress;
+	int timestampTzMilli = 0;
+	int minutesPassed = 0;
+	int secondsPassed = 0;
+
+	if (isSetSecondCfg(schedule))
+	{
+        /* second interval
+        */
+		timestampTzMilli = 1000;
+		currentTimeStart = TimestampSecondStart(currentTime);
+		if (g_lastSecond == 0)
+		{
+			g_lastSecond = TimestampSecondStart(currentTime);
+		}
+		virtualTime = g_lastSecond;
+
+		secondsPassed = SecondsPassed(g_lastSecond, currentTime);
+		if (secondsPassed == 0)
+		{
+			/* wait for new second */
+			return;
+		}
+
+		/* use Vixie cron logic for clock jumps */
+		if (secondsPassed > (3*SECOND_COUNT))
+		{
+			/* clock jumped forward by more than 3 hours */
+			clockProgress = CLOCK_CHANGE;
+		}
+		else if (secondsPassed > 5)
+		{
+			/* clock went forward by more than 5 seconds (DST?) */
+			clockProgress = CLOCK_JUMP_FORWARD;
+		}
+		else if (secondsPassed > 0)
+		{
+			/* clock went forward by 1-5 seconds */
+			clockProgress = CLOCK_PROGRESSED;
+		}
+		else if (secondsPassed > -(3*SECOND_COUNT))
+		{
+			/* clock jumped backwards by less than 3 minutes (DST?) */
+			clockProgress = CLOCK_JUMP_BACKWARD;
+		}
+		else
+		{
+			/* clock jumped backwards 3 hours or more */
+			clockProgress = CLOCK_CHANGE;
+		}
+	}
+	else
+	{
+        /* minute interval
+        */
+		timestampTzMilli = 60 * 1000;
+		currentTimeStart = TimestampMinuteStart(currentTime);
+		if (g_lastMinute == 0)
+		{
+			g_lastMinute = TimestampMinuteStart(currentTime);
+		}
+		virtualTime = g_lastMinute;
+
+		minutesPassed = MinutesPassed(g_lastMinute, currentTime);
+		if (minutesPassed == 0)
+		{
+			/* wait for new minute */
+			return;
+		}
+
+		/* use Vixie cron logic for clock jumps */
+		if (minutesPassed > (3*MINUTE_COUNT))
+		{
+			/* clock jumped forward by more than 3 hours */
+			clockProgress = CLOCK_CHANGE;
+		}
+		else if (minutesPassed > 5)
+		{
+			/* clock went forward by more than 5 minutes (DST?) */
+			clockProgress = CLOCK_JUMP_FORWARD;
+		}
+		else if (minutesPassed > 0)
+		{
+			/* clock went forward by 1-5 minutes */
+			clockProgress = CLOCK_PROGRESSED;
+		}
+		else if (minutesPassed > -(3*MINUTE_COUNT))
+		{
+			/* clock jumped backwards by less than 3 hours (DST?) */
+			clockProgress = CLOCK_JUMP_BACKWARD;
+		}
+		else
+		{
+			/* clock jumped backwards 3 hours or more */
+			clockProgress = CLOCK_CHANGE;
+		}
+	}
 
 	switch (clockProgress)
 	{
@@ -792,14 +857,14 @@ StartPendingRuns(CronTask *task, ClockProgress clockProgress,
 			do
 			{
 				virtualTime = TimestampTzPlusMilliseconds(virtualTime,
-														  60*1000);
+														  timestampTzMilli);
 
-				if (ShouldRunTask(schedule, virtualTime, true, true))
+				if (ShouldRunTask(task, schedule, virtualTime, true, true))
 				{
 					task->pendingRunCount += 1;
 				}
 			}
-			while (virtualTime < currentMinute);
+			while (virtualTime < currentTimeStart);
 
 			break;
 		}
@@ -820,17 +885,17 @@ StartPendingRuns(CronTask *task, ClockProgress clockProgress,
 			do
 			{
 				virtualTime = TimestampTzPlusMilliseconds(virtualTime,
-														  60*1000);
+														  timestampTzMilli);
 
-				if (ShouldRunTask(schedule, virtualTime, false, true))
+				if (ShouldRunTask(task, schedule, virtualTime, false, true))
 				{
 					task->pendingRunCount += 1;
 				}
 
-			} while (virtualTime < currentMinute);
+			} while (virtualTime < currentTimeStart);
 
 			/* run wildcard jobs for current minute */
-			if (ShouldRunTask(schedule, currentMinute, true, false))
+			if (ShouldRunTask(task, schedule, currentTimeStart, true, false))
 			{
 				task->pendingRunCount += 1;
 			}
@@ -848,7 +913,7 @@ StartPendingRuns(CronTask *task, ClockProgress clockProgress,
 			 * virtual time does not change until we are caught up
 			 */
 
-			if (ShouldRunTask(schedule, currentMinute, true, false))
+			if (ShouldRunTask(task, schedule, currentTimeStart, true, false))
 			{
 				task->pendingRunCount += 1;
 			}
@@ -863,7 +928,7 @@ StartPendingRuns(CronTask *task, ClockProgress clockProgress,
 			 * intermediate fixed-time jobs and go back to
 			 * normal operation.
 			 */
-			if (ShouldRunTask(schedule, currentMinute, true, true))
+			if (ShouldRunTask(task, schedule, currentTimeStart, true, true))
 			{
 				task->pendingRunCount += 1;
 			}
@@ -871,6 +936,21 @@ StartPendingRuns(CronTask *task, ClockProgress clockProgress,
 	}
 }
 
+/*
+ * SecondsPassed returns the number of seconds between startTime and
+ * stopTime rounded down to the closest integer.
+ */
+static int
+SecondsPassed(TimestampTz startTime, TimestampTz stopTime)
+{
+    int microsPassed = 0;
+    long secondsPassed = 0;
+
+    TimestampDifference(startTime, stopTime,
+                        &secondsPassed, &microsPassed);
+
+    return secondsPassed;
+}
 
 /*
  * MinutesPassed returns the number of minutes between startTime and
@@ -891,9 +971,26 @@ MinutesPassed(TimestampTz startTime, TimestampTz stopTime)
 	return minutesPassed;
 }
 
+/*
+ * TimestampSecondStart returns the timestamp at the start of the
+ * current second for the given time.
+ */
+static TimestampTz
+TimestampSecondStart(TimestampTz time)
+{
+	TimestampTz result = 0;
+
+#ifdef HAVE_INT64_TIMESTAMP
+	result = time - time % 1000000;
+#else
+	result = (long) time;
+#endif
+
+	return result;
+}
 
 /*
- * TimestampMinuteEnd returns the timestamp at the start of the
+ * TimestampMinuteStart returns the timestamp at the start of the
  * current minute for the given time.
  */
 static TimestampTz
@@ -929,34 +1026,91 @@ TimestampMinuteEnd(TimestampTz time)
 	return result;
 }
 
+/*
+ * Determine whether the second parameter is configured
+ */
+static bool
+isSetSecondCfg(entry *schedule)
+{
+    if (NULL == schedule)
+    {
+        return false;
+    }
+
+    /* corresponding function set_element(), (59 >> 3) = 7
+     */
+    for (int i = 0; i <= 7; i++)
+    {
+        if (NULL != &(schedule->second[i]) && schedule->second[i])
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
 
 /*
  * ShouldRunTask returns whether a job should run in the current
  * minute according to its schedule.
  */
 static bool
-ShouldRunTask(entry *schedule, TimestampTz currentTime, bool doWild,
+ShouldRunTask(CronTask *task, entry *schedule, TimestampTz currentTime, bool doWild,
 			  bool doNonWild)
 {
-	time_t currentTime_t = timestamptz_to_time_t(currentTime);
-	struct tm *tm = gmtime(&currentTime_t);
+	time_t currentTime_t;
+	struct tm *tm;
+	
+	int second = 0;
+	int minute = 0;
+	int hour = 0;
+	int dayOfMonth = 0;
+	int month = 0;
+	int dayOfWeek = 0;
+	
+	int timecfg = 0;
+	int tmzone = 0;
+    TimestampTz tm_off = 0;
 
-	int minute = tm->tm_min -FIRST_MINUTE;
-	int hour = tm->tm_hour -FIRST_HOUR;
-	int dayOfMonth = tm->tm_mday -FIRST_DOM;
-	int month = tm->tm_mon +1 -FIRST_MONTH;
-	int dayOfWeek = tm->tm_wday -FIRST_DOW;
+	/* get time zone offset
+	*/
+	queryZoneFromCronExt(task->jobId, &tmzone);
+	tm_off = (long long int)tmzone * 60 * 60 * 1000000;
 
-	if (bit_test(schedule->minute, minute) &&
-	    bit_test(schedule->hour, hour) &&
-	    bit_test(schedule->month, month) &&
+	currentTime_t = timestamptz_to_time_t((currentTime + tm_off));
+	tm = gmtime(&currentTime_t);
+
+	second = tm->tm_sec -FIRST_SECOND;
+	minute = tm->tm_min -FIRST_MINUTE;
+	hour = tm->tm_hour -FIRST_HOUR;
+	dayOfMonth = tm->tm_mday -FIRST_DOM;
+	month = tm->tm_mon +1 -FIRST_MONTH;
+	dayOfWeek = tm->tm_wday -FIRST_DOW;
+
+	/* if there is a second parameter, add the second detection
+	 */
+    if (isSetSecondCfg(schedule))
+    {
+        timecfg = bit_test(schedule->second, second) && bit_test(schedule->minute, minute) &&
+                  bit_test(schedule->hour, hour) && bit_test(schedule->month, month);
+    }
+    else
+    {
+        timecfg = bit_test(schedule->minute, minute) &&
+                  bit_test(schedule->hour, hour) && bit_test(schedule->month, month);
+    }
+
+	if (timecfg &&
 	    ( ((schedule->flags & DOM_STAR) || (schedule->flags & DOW_STAR))
 	      ? (bit_test(schedule->dow,dayOfWeek) && bit_test(schedule->dom,dayOfMonth))
 	      : (bit_test(schedule->dow,dayOfWeek) || bit_test(schedule->dom,dayOfMonth)))) {
 		if ((doNonWild && !(schedule->flags & (MIN_STAR|HR_STAR)))
 		    || (doWild && (schedule->flags & (MIN_STAR|HR_STAR))))
-		{
-			return true;
+		{		
+			if (0 == task->pendingRunCount)
+			{
+				return true;
+			}
 		}
 	}
 
@@ -1750,6 +1904,7 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 		default:
 		{
 			int currentPendingRunCount = task->pendingRunCount;
+			char mode[16] = {0};
 
 			InitializeCronTask(task, jobId);
 
@@ -1759,6 +1914,15 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 			 * run immediately.
 			 */
 			task->pendingRunCount = currentPendingRunCount;
+			task->pendingRunCount -= 1;
+
+			queryModeFromCronExt(task->jobId, mode);
+			if (!strcmp(MODE_SINGLE, mode))
+			{
+				/* after one execution active: true -> false
+				 */
+				updateCronActive(task->jobId, "false");
+			}
 		}
 	}
 }

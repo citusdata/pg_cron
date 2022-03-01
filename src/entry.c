@@ -31,11 +31,11 @@
 
 
 typedef	enum ecode {
-	e_none, e_minute, e_hour, e_dom, e_month, e_dow,
+	e_none, e_second, e_minute, e_hour, e_dom, e_month, e_dow,
 	e_cmd, e_timespec, e_username, e_cmd_len
 } ecode_e;
 
-static char	get_list(bitstr_t *, int, int, char *[], int, FILE *),
+static int	get_list(bitstr_t *, int, int, char *[], int, FILE *),
 		get_range(bitstr_t *, int, int, char *[], int, FILE *),
 		get_number(int *, int, char *[], int, FILE *);
 static int	set_element(bitstr_t *, int, int, int);
@@ -49,7 +49,35 @@ free_entry(entry *e)
 	free(e);
 }
 
+/*
+ * Get schedule time parameters number
+ */
+static int
+getscheduletimenum(char *schedule)
+{
+    int num = 0;
 
+	if (NULL == schedule || 0 == strlen(schedule))
+	{
+        elog(LOG, "invalid schedule");
+	    goto end;
+	}
+
+    for (unsigned int i = 1; i <= strlen(schedule); i++)
+    {
+        if ((' ' == schedule[i]) && (' ' != schedule[i-1]))
+        {
+            num++;
+        }
+        if ((' ' != schedule[i]) && (strlen(schedule) == i))
+        {
+            num++;
+        }
+    }
+
+end:
+    return num;
+}
 
 /* return NULL if eof or syntax error occurs;
  * otherwise return a pointer to a new entry.
@@ -73,6 +101,8 @@ parse_cron_entry(char *schedule)
 	 *   system crontab (/etc/crontab):
 	 *	minutes hours doms months dows USERNAME cmd\n
 	 */
+
+	int time_num = getscheduletimenum(schedule);
 
 	ecode_e	ecode = e_none;
 	entry *e = (entry *) calloc(sizeof(entry), sizeof(char));
@@ -166,6 +196,20 @@ parse_cron_entry(char *schedule)
 	} else {
 		Debug(DPARS, ("load_entry()...about to parse numerics\n"))
 
+		if (5 < time_num)
+		{
+			/* greater than 5, the first is the second parameter
+			*/
+			if (ch == '*')
+				e->flags |= SEC_STAR;
+			ch = get_list(e->second, FIRST_SECOND, LAST_SECOND,
+				      PPC_NULL, ch, file);
+			if (ch == EOF) {
+				ecode = e_second;
+				goto eof;
+			}
+		}
+
 		if (ch == '*')
 			e->flags |= MIN_STAR;
 		ch = get_list(e->minute, FIRST_MINUTE, LAST_MINUTE,
@@ -241,7 +285,7 @@ parse_cron_entry(char *schedule)
 }
 
 
-static char
+static int
 get_list(bits, low, high, names, ch, file)
 	bitstr_t	*bits;		/* one bit per flag, default=FALSE */
 	int		low, high;	/* bounds, impl. offset for bitstr */
@@ -288,7 +332,7 @@ get_list(bits, low, high, names, ch, file)
 }
 
 
-static char
+static int
 get_range(bits, low, high, names, ch, file)
 	bitstr_t	*bits;		/* one bit per flag, default=FALSE */
 	int		low, high;	/* bounds, impl. offset for bitstr */
@@ -381,7 +425,7 @@ get_range(bits, low, high, names, ch, file)
 	/* range. set all elements from num1 to num2, stepping
 	 * by num3.  (the step is a downward-compatible extension
 	 * proposed conceptually by bob@acornrc, syntactically
-	 * designed then implemented by paul vixie).
+	 * designed then implmented by paul vixie).
 	 */
 	for (i = num1;  i <= num2;  i += num3)
 		if (EOF == set_element(bits, low, high, i))
@@ -391,7 +435,7 @@ get_range(bits, low, high, names, ch, file)
 }
 
 
-static char
+static int
 get_number(numptr, low, names, ch, file)
 	int	*numptr;	/* where does the result go? */
 	int	low;		/* offset applied to result if symbolic enum used */
