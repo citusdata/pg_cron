@@ -1,3 +1,5 @@
+This fork support secondly granularity and once time job.
+
 [![Citus Banner](/github-banner.png)](https://www.citusdata.com/)
 
 [![Slack Status](http://slack.citusdata.com/badge.svg)](https://slack.citusdata.com)
@@ -38,6 +40,55 @@ SELECT cron.unschedule(42);
           t
 ```
 
+pg_cron can support scheduled tasks and one-time tasks. You can pass in the task mode in the fourth parameter and there are two parameters to choose from, 'single' represents a one-time task, this means that when the task is executed for the first time, the task will not be executed again, 'timing' represents a scheduled task, it has the same meaning as not passing in the fourth task mode parameter, which means timed tasks.
+
+If you want to configure the task mode, the first parameter task name must be passed in:
+
+            -- Change to Vacuum only once immediately
+            SELECT cron.schedule('dayly-vacuum', '* * * * * *', 'VACUUM', 'single');
+             schedule
+            ----------
+                   46
+
+            -- Change to Vacuum every 30 seconds
+            SELECT cron.schedule('dayly-vacuum', '*/30 * * * * *', 'VACUUM', 'timing');
+             schedule
+            ----------
+                   46
+
+            -- Change to Vacuum only once at the next 10:00:30am (East eight time zone)
+            SELECT cron.schedule('dayly-vacuum', '30 0 10 * * *', 'VACUUM', 'single');
+             schedule
+            ----------
+                   46
+
+            -- Change to Vacuum every day at 10:00:30am (East eight time zone)
+            SELECT cron.schedule('dayly-vacuum', '30 0 10 * * *', 'VACUUM', 'timing');
+             schedule
+            ----------
+                   46
+        
+pg_cron can support time zone configuration. You can pass the timezone value in the fifth parameter. If you want to configure the time zone, the first parameter task name and the fourth parameter task mode must be passed in. If no time zone is configured, the default is East eight time zone:
+
+            -- Change to Vacuum every day at 10:00am (GMT)
+            SELECT cron.schedule('dayly-vacuum', '0 10 * * *', 'VACUUM', 'timing', '0');
+             schedule
+            ----------
+                   46
+
+            -- Change to vacuum every day at 10:00am (West ten time zone)
+            SELECT cron.schedule('dayly-vacuum', '0 10 * * *', 'VACUUM', 'timing', '-10');
+             schedule
+            ----------
+                   46
+
+            -- Change to vacuum only once at the next 10:00am (East six time zone)
+            SELECT cron.schedule('dayly-vacuum', '0 10 * * *', 'VACUUM', 'single', '6');
+             schedule
+            ----------
+                   46
+
+
 pg_cron can run multiple jobs in parallel, but it runs at most one instance of a job at a time. If a second run is supposed to start before the first one finishes, then the second run is queued and started as soon as the first run completes.
 
 The schedule uses the standard cron syntax, in which * means "run every time period", and a specific number means "but only at this time":
@@ -55,6 +106,23 @@ The schedule uses the standard cron syntax, in which * means "run every time per
 ```
 
 An easy way to create a cron schedule is: [crontab.guru](http://crontab.guru/).
+
+It has been enhanced on the basis of standard cron syntax to supports second-level tasks:
+
+             ┌─────────────second (0 - 59)
+             │ ┌───────────── minute (0 - 59)
+             │ │ ┌────────────── hour (0 - 23)
+             │ │ │ ┌─────────────── day of month (1 - 31)
+             │ │ │ │ ┌──────────────── month (1 - 12)
+             │ │ │ │ │ ┌───────────────── day of week (0 - 6) (0 to 6 are Sunday to
+             │ │ │ │ │ │                  Saturday, or use names; 7 is also Sunday)
+             │ │ │ │ │ │
+             │ │ │ │ │ │
+              *  *  *  *  *  *
+        
+For security, jobs are executed in the database in which the cron.schedule function is called with the same permissions as the current user. In addition, users are only able to see their own jobs in the cron.job table and cron.lt_job view.
+
+
 
 The code in pg_cron that handles parsing and scheduling comes directly from the cron source code by Paul Vixie, hence the same options are supported. Be aware that pg_cron always uses GMT!
 
