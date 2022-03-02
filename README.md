@@ -43,7 +43,7 @@ SELECT cron.unschedule(42);
 pg_cron can support scheduled tasks and one-time tasks. You can pass in the task mode in the fourth parameter and there are two parameters to choose from, 'single' represents a one-time task, this means that when the task is executed for the first time, the task will not be executed again, 'timing' represents a scheduled task, it has the same meaning as not passing in the fourth task mode parameter, which means timed tasks.
 
 If you want to configure the task mode, the first parameter task name must be passed in:
-
+```sql
             -- Change to Vacuum only once immediately
             SELECT cron.schedule('dayly-vacuum', '* * * * * *', 'VACUUM', 'single');
              schedule
@@ -67,9 +67,9 @@ If you want to configure the task mode, the first parameter task name must be pa
              schedule
             ----------
                    46
-        
+```
 pg_cron can support time zone configuration. You can pass the timezone value in the fifth parameter. If you want to configure the time zone, the first parameter task name and the fourth parameter task mode must be passed in. If no time zone is configured, the default is East eight time zone:
-
+```sql
             -- Change to Vacuum every day at 10:00am (GMT)
             SELECT cron.schedule('dayly-vacuum', '0 10 * * *', 'VACUUM', 'timing', '0');
              schedule
@@ -88,7 +88,7 @@ pg_cron can support time zone configuration. You can pass the timezone value in 
             ----------
                    46
 
-
+```
 pg_cron can run multiple jobs in parallel, but it runs at most one instance of a job at a time. If a second run is supposed to start before the first one finishes, then the second run is queued and started as soon as the first run completes.
 
 The schedule uses the standard cron syntax, in which * means "run every time period", and a specific number means "but only at this time":
