@@ -1745,8 +1745,18 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 		default:
 		{
 			int currentPendingRunCount = task->pendingRunCount;
+			CronJob *job = GetCronJob(jobId);
 
-			InitializeCronTask(task, jobId);
+			/*
+			 * It may happen that job was unscheduled during task execution.
+			 * In this case we keep task as-is. Otherwise, we should
+			 * re-initialize task, i.e. reset fields to initial values including
+			 * status.
+			 */
+			if (job != NULL && job->active)
+				InitializeCronTask(task, jobId);
+			else
+				task->state = CRON_TASK_WAITING;
 
 			/*
 			 * We keep the number of runs that should have started while
