@@ -154,7 +154,6 @@ The following table keeps track of which of the major managed Postgres services 
 | [Alibaba Cloud](https://www.alibabacloud.com/help/doc-detail/150355.htm) | :heavy_check_mark: |
 | [Amazon RDS](https://aws.amazon.com/rds/postgresql/)     | :heavy_check_mark:      |          |
 | [Azure](https://azure.microsoft.com/en-us/services/postgresql/) | :heavy_check_mark:  |
-| [Citus Cloud](https://www.citusdata.com/product/cloud)  | :heavy_check_mark: |
 | [Crunchy Bridge](https://www.crunchydata.com/products/crunchy-bridge/?ref=producthunt) | :heavy_check_mark: |
 | [DigitalOcean](https://www.digitalocean.com/products/managed-databases/) | :heavy_check_mark: |
 | [Google Cloud](https://cloud.google.com/sql/postgresql/) | :heavy_check_mark: |
