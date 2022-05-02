@@ -238,7 +238,7 @@ _PG_init(void)
 		NULL,
 		&EnableSuperuserJobs,
 		true,
-		PGC_USERSET,
+		PGC_POSTMASTER,
 		GUC_SUPERUSER_ONLY,
 		NULL, NULL, NULL);
 
