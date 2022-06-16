@@ -998,6 +998,8 @@ WaitForLatch(int timeoutMs)
 
 	ResetLatch(MyLatch);
 
+	CHECK_FOR_INTERRUPTS();
+
 	if (rc & WL_POSTMASTER_DEATH)
 	{
 		/* postmaster died and we should bail out immediately */
@@ -2153,8 +2155,10 @@ ExecuteSqlString(const char *sql)
 		 * perform internal transaction control.
 		 */
 		oldcontext = MemoryContextSwitchTo(parsecontext);
-		#if PG_VERSION_NUM >= 100000
-			querytree_list = pg_analyze_and_rewrite(parsetree, sql, NULL, 0,NULL);
+		#if PG_VERSION_NUM >= 150000
+			querytree_list = pg_analyze_and_rewrite_fixedparams(parsetree, sql, NULL, 0, NULL);
+		#elif PG_VERSION_NUM >= 100000
+			querytree_list = pg_analyze_and_rewrite(parsetree, sql, NULL, 0, NULL);
 		#else
 			querytree_list = pg_analyze_and_rewrite(parsetree, sql, NULL, 0);
 		#endif
