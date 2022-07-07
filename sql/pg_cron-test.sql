@@ -103,6 +103,23 @@ SELECT username FROM cron.job where jobid=2;
 SELECT cron.schedule_in_database(job_name:='his vacuum', schedule:='0 11 * * *', command:='VACUUM',database:=current_database(), username:='pgcron_cront');
 SELECT username FROM cron.job where jobid=7;
 
+-- Override function
+DROP EXTENSION IF EXISTS pg_cron cascade;
+CREATE TABLE test (data text);
+DROP TYPE IF EXISTS current_setting cascade;
+CREATE TYPE current_setting AS ENUM ('cron.database_name');
+
+CREATE OR REPLACE FUNCTION public.func1(text, current_setting) RETURNS text
+    LANGUAGE sql volatile AS 'INSERT INTO test(data) VALUES (current_user); SELECT current_database();';
+
+CREATE OR REPLACE FUNCTION public.func1(current_setting) RETURNS text
+    LANGUAGE sql volatile AS 'INSERT INTO test(data) VALUES (current_user); SELECT current_database();';
+
+CREATE CAST (current_setting AS text) WITH FUNCTION public.func1(current_setting) AS IMPLICIT;
+
+CREATE EXTENSION pg_cron VERSION '1.4';
+select * from public.test;
+
 -- cleaning
 DROP EXTENSION pg_cron;
 drop user pgcron_cront;

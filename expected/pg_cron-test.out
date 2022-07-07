@@ -189,6 +189,23 @@ SELECT username FROM cron.job where jobid=7;
  pgcron_cront
 (1 row)
 
+-- Override function
+DROP EXTENSION IF EXISTS pg_cron cascade;
+CREATE TABLE test (data text);
+DROP TYPE IF EXISTS current_setting cascade;
+NOTICE:  type "current_setting" does not exist, skipping
+CREATE TYPE current_setting AS ENUM ('cron.database_name');
+CREATE OR REPLACE FUNCTION public.func1(text, current_setting) RETURNS text
+    LANGUAGE sql volatile AS 'INSERT INTO test(data) VALUES (current_user); SELECT current_database();';
+CREATE OR REPLACE FUNCTION public.func1(current_setting) RETURNS text
+    LANGUAGE sql volatile AS 'INSERT INTO test(data) VALUES (current_user); SELECT current_database();';
+CREATE CAST (current_setting AS text) WITH FUNCTION public.func1(current_setting) AS IMPLICIT;
+CREATE EXTENSION pg_cron VERSION '1.4';
+select * from public.test;
+ data 
+------
+(0 rows)
+
 -- cleaning
 DROP EXTENSION pg_cron;
 drop user pgcron_cront;
