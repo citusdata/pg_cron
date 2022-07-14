@@ -1,3 +1,10 @@
+### pg_cron v1.4.2 (July 15, 2022) ###
+
+* Fixes a bug that could lead to privilege escalation if users can trigger CREATE EXTENSION
+* Add compatibility for PostgreSQL 15 beta
+* Fixes a bug that could cause unschedule to crash
+* Ensures that cron.max_running_jobs is not higher than possible connection count
+
 ### pg_cron v1.4.1 (September 25, 2021) ###
 
 * Fixes PostgreSQL 11- support
