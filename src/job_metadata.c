@@ -522,8 +522,8 @@ NextRunId(void)
 	Datum sequenceIdDatum = InvalidOid;
 	Oid savedUserId = InvalidOid;
 	int savedSecurityContext = 0;
-	Datum jobIdDatum = 0;
-	int64 jobId = 0;
+	Datum runIdDatum = 0;
+	int64 runId = 0;
 	bool failOK = true;
 	MemoryContext originalContext = CurrentMemoryContext;
 
@@ -551,17 +551,17 @@ NextRunId(void)
 	SetUserIdAndSecContext(CronExtensionOwner(), SECURITY_LOCAL_USERID_CHANGE);
 
 	/* generate new and unique colocation id from sequence */
-	jobIdDatum = DirectFunctionCall1(nextval_oid, sequenceIdDatum);
+	runIdDatum = DirectFunctionCall1(nextval_oid, sequenceIdDatum);
 
 	SetUserIdAndSecContext(savedUserId, savedSecurityContext);
 
-	jobId = DatumGetInt64(jobIdDatum);
+	runId = DatumGetInt64(runIdDatum);
 
 	PopActiveSnapshot();
 	CommitTransactionCommand();
 	MemoryContextSwitchTo(originalContext);
 
-	return jobId;
+	return runId;
 }
 
 /*
