@@ -35,7 +35,7 @@ typedef	enum ecode {
 	e_cmd, e_timespec, e_username, e_cmd_len
 } ecode_e;
 
-static char	get_list(bitstr_t *, int, int, char *[], int, FILE *),
+static int	get_list(bitstr_t *, int, int, char *[], int, FILE *),
 		get_range(bitstr_t *, int, int, char *[], int, FILE *),
 		get_number(int *, int, char *[], int, FILE *);
 static int	set_element(bitstr_t *, int, int, int);
@@ -241,7 +241,7 @@ parse_cron_entry(char *schedule)
 }
 
 
-static char
+static int
 get_list(bits, low, high, names, ch, file)
 	bitstr_t	*bits;		/* one bit per flag, default=FALSE */
 	int		low, high;	/* bounds, impl. offset for bitstr */
@@ -288,7 +288,7 @@ get_list(bits, low, high, names, ch, file)
 }
 
 
-static char
+static int
 get_range(bits, low, high, names, ch, file)
 	bitstr_t	*bits;		/* one bit per flag, default=FALSE */
 	int		low, high;	/* bounds, impl. offset for bitstr */
@@ -391,7 +391,7 @@ get_range(bits, low, high, names, ch, file)
 }
 
 
-static char
+static int
 get_number(numptr, low, names, ch, file)
 	int	*numptr;	/* where does the result go? */
 	int	low;		/* offset applied to result if symbolic enum used */
