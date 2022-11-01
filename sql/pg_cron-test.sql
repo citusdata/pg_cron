@@ -110,10 +110,10 @@ DROP TYPE IF EXISTS current_setting cascade;
 CREATE TYPE current_setting AS ENUM ('cron.database_name');
 
 CREATE OR REPLACE FUNCTION public.func1(text, current_setting) RETURNS text
-    LANGUAGE sql volatile AS 'INSERT INTO test(data) VALUES (current_user); SELECT current_database();';
+    LANGUAGE sql volatile AS 'INSERT INTO test(data) VALUES (current_user); SELECT current_database()::text;';
 
 CREATE OR REPLACE FUNCTION public.func1(current_setting) RETURNS text
-    LANGUAGE sql volatile AS 'INSERT INTO test(data) VALUES (current_user); SELECT current_database();';
+    LANGUAGE sql volatile AS 'INSERT INTO test(data) VALUES (current_user); SELECT current_database()::text;';
 
 CREATE CAST (current_setting AS text) WITH FUNCTION public.func1(current_setting) AS IMPLICIT;
 
