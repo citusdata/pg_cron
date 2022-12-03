@@ -36,6 +36,12 @@ SELECT cron.unschedule(42);
  unschedule
 ------------
           t
+
+-- Vacuum every Sunday at 4:00am (GMT) in a database other than the one pg_cron is installed in
+SELECT cron.schedule_in_database('weekly-vacuum', '0 4 * * *', 'VACUUM', 'some_other_database');
+ schedule
+----------
+       44
 ```
 
 pg_cron can run multiple jobs in parallel, but it runs at most one instance of a job at a time. If a second run is supposed to start before the first one finishes, then the second run is queued and started as soon as the first run completes.
@@ -99,11 +105,13 @@ By default, the pg_cron background worker expects its metadata tables to be crea
 ```
 # add to postgresql.conf
 
-# optionally, specify the database in which the pg_cron background worker should run (defaults to postgres) 
+# optionally, specify the database in which the pg_cron background worker should run (defaults to postgres)
 cron.database_name = 'postgres'
 ```
 
 After restarting PostgreSQL, you can create the pg_cron functions and metadata tables using `CREATE EXTENSION pg_cron`.
+
+_Note: `pg_cron` may only be installed to one database in a cluster. If you need to run jobs in multiple databases, use `cron.schedule_in_database()`._
 
 ```sql
 -- run as superuser:
