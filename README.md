@@ -30,7 +30,6 @@ SELECT cron.unschedule('nightly-vacuum' );
  unschedule 
 ------------
  t
-(1 row)
 
 SELECT cron.unschedule(42);
  unschedule
