@@ -61,7 +61,7 @@ The schedule uses the standard cron syntax, in which * means "run every time per
 
 An easy way to create a cron schedule is: [crontab.guru](http://crontab.guru/).
 
-The code in pg_cron that handles parsing and scheduling comes directly from the cron source code by Paul Vixie, hence the same options are supported. Be aware that pg_cron always uses GMT!
+The code in pg_cron that handles parsing and scheduling comes directly from the cron source code by Paul Vixie, hence the same options are supported.
 
 ## Installing pg_cron
 
@@ -106,6 +106,14 @@ By default, the pg_cron background worker expects its metadata tables to be crea
 
 # optionally, specify the database in which the pg_cron background worker should run (defaults to postgres)
 cron.database_name = 'postgres'
+```
+
+Previously we could only use GMT time, but now you can adapt your time by setting cron.timezone. You can configure this by setting the `cron.timezone` configuration parameter in postgresql.conf.
+```
+# add to postgresql.conf
+
+# optionally, specify the timezone in which the pg_cron background worker should run (defaults to GMT). E.g:
+cron.timezone = 'PRC'
 ```
 
 After restarting PostgreSQL, you can create the pg_cron functions and metadata tables using `CREATE EXTENSION pg_cron`.

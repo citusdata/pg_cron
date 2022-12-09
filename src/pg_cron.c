@@ -60,6 +60,7 @@
 #include "commands/extension.h"
 #include "commands/sequence.h"
 #include "commands/trigger.h"
+#include "commands/variable.h"
 #include "lib/stringinfo.h"
 #include "libpq-fe.h"
 #include "libpq/pqmq.h"
@@ -162,6 +163,8 @@ static int RunningTaskCount = 0;
 static int MaxRunningTasks = 0;
 static int CronLogMinMessages = WARNING;
 static bool UseBackgroundWorkers = false;
+
+char  *cron_timezone = NULL;
 
 static const struct config_enum_entry cron_message_level_options[] = {
 	{"debug5", DEBUG5, false},
@@ -295,6 +298,16 @@ _PG_init(void)
 		WARNING,
 		cron_message_level_options,
 		PGC_SIGHUP,
+		GUC_SUPERUSER_ONLY,
+		NULL, NULL, NULL);
+
+	DefineCustomStringVariable(
+		"cron.timezone",
+		gettext_noop("Specify timezone used for cron schedule."),
+		NULL,
+		&cron_timezone,
+		"GMT",
+		PGC_POSTMASTER,
 		GUC_SUPERUSER_ONLY,
 		NULL, NULL, NULL);
 
@@ -934,7 +947,7 @@ ShouldRunTask(entry *schedule, TimestampTz currentTime, bool doWild,
 			  bool doNonWild)
 {
 	time_t currentTime_t = timestamptz_to_time_t(currentTime);
-	struct tm *tm = gmtime(&currentTime_t);
+	struct pg_tm* tm = pg_localtime(&currentTime_t, pg_tzset(cron_timezone));
 
 	int minute = tm->tm_min -FIRST_MINUTE;
 	int hour = tm->tm_hour -FIRST_HOUR;
