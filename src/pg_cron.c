@@ -118,7 +118,6 @@ void _PG_init(void);
 void _PG_fini(void);
 static void pg_cron_sigterm(SIGNAL_ARGS);
 static void pg_cron_sighup(SIGNAL_ARGS);
-static void pg_cron_background_worker_sigterm(SIGNAL_ARGS);
 PGDLLEXPORT void PgCronLauncherMain(Datum arg);
 PGDLLEXPORT void CronBackgroundWorker(Datum arg);
 
@@ -532,29 +531,6 @@ bgw_generate_returned_message(StringInfoData *display_msg, ErrorData edata)
 
 	if (edata.context != NULL)
 		appendStringInfo(display_msg, "\nCONTEXT: %s", edata.context);
-}
-
-/*
- * Signal handler for SIGTERM for background workers
- * 		When we receive a SIGTERM, we set InterruptPending and ProcDiePending
- * 		just like a normal backend.  The next CHECK_FOR_INTERRUPTS() will do the
- * 		right thing.
- */
-static void
-pg_cron_background_worker_sigterm(SIGNAL_ARGS)
-{
-	int save_errno = errno;
-
-	if (MyProc)
-		SetLatch(&MyProc->procLatch);
-
-	if (!proc_exit_inprogress)
-	{
-		InterruptPending = true;
-		ProcDiePending = true;
-	}
-
-	errno = save_errno;
 }
 
 
@@ -1991,7 +1967,8 @@ CronBackgroundWorker(Datum main_arg)
 	shm_mq *mq;
 	shm_mq_handle *responseq;
 
-	pqsignal(SIGTERM, pg_cron_background_worker_sigterm);
+	/* handle SIGTERM like regular backend */
+	pqsignal(SIGTERM, die);
 	BackgroundWorkerUnblockSignals();
 
 	/* Set up a memory context and resource owner. */
