@@ -308,7 +308,7 @@ _PG_init(void)
 		"GMT",
 		PGC_POSTMASTER,
 		GUC_SUPERUSER_ONLY,
-		NULL, NULL, NULL);
+		check_timezone, NULL, NULL);
 
 	/* set up common data for all our workers */
 	worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
