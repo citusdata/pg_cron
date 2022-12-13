@@ -184,7 +184,6 @@ static const struct config_enum_entry cron_message_level_options[] = {
 };
 
 static const char *cron_error_severity(int elevel);
-static bool check_cron_timezone(char **newval, void **extra, GucSource source);
 
 /*
  * _PG_init gets called when the extension is loaded.
@@ -310,7 +309,7 @@ _PG_init(void)
 		"GMT",
 		PGC_POSTMASTER,
 		GUC_SUPERUSER_ONLY,
-		check_cron_timezone, NULL, NULL);
+		check_timezone, NULL, NULL);
 
 	/* set up common data for all our workers */
 	worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
@@ -474,133 +473,6 @@ cron_error_severity(int elevel)
 	}
 
 	return elevel_char;
-}
-
-/*
- * TIMEZONE
- */
-
-/*
- * check_cron_timezone: GUC check_hook for cron.timezone
- */
-static bool
-check_cron_timezone(char **newval, void **extra, GucSource source)
-{
-	pg_tz	   *new_tz;
-	long		gmtoffset;
-	char	   *endptr;
-	double		hours;
-
-	if (pg_strncasecmp(*newval, "interval", 8) == 0)
-	{
-		/*
-		 * Support INTERVAL 'foo'.  This is for SQL spec compliance, not
-		 * because it has any actual real-world usefulness.
-		 */
-		const char *valueptr = *newval;
-		char	   *val;
-		Interval   *interval;
-
-		valueptr += 8;
-		while (isspace((unsigned char) *valueptr))
-			valueptr++;
-		if (*valueptr++ != '\'')
-			return false;
-		val = pstrdup(valueptr);
-		/* Check and remove trailing quote */
-		endptr = strchr(val, '\'');
-		if (!endptr || endptr[1] != '\0')
-		{
-			pfree(val);
-			return false;
-		}
-		*endptr = '\0';
-
-		/*
-		 * Try to parse it.  XXX an invalid interval format will result in
-		 * ereport(ERROR), which is not desirable for GUC.  We did what we
-		 * could to guard against this in flatten_set_variable_args, but a
-		 * string coming in from postgresql.conf might contain anything.
-		 */
-		interval = DatumGetIntervalP(DirectFunctionCall3(interval_in,
-														 CStringGetDatum(val),
-														 ObjectIdGetDatum(InvalidOid),
-														 Int32GetDatum(-1)));
-
-		pfree(val);
-		if (interval->month != 0)
-		{
-			GUC_check_errdetail("Cannot specify months in time zone interval.");
-			pfree(interval);
-			return false;
-		}
-		if (interval->day != 0)
-		{
-			GUC_check_errdetail("Cannot specify days in time zone interval.");
-			pfree(interval);
-			return false;
-		}
-
-		/* Here we change from SQL to Unix sign convention */
-		gmtoffset = -(interval->time / USECS_PER_SEC);
-		new_tz = pg_tzset_offset(gmtoffset);
-
-		pfree(interval);
-	}
-	else
-	{
-		/*
-		 * Try it as a numeric number of hours (possibly fractional).
-		 */
-		hours = strtod(*newval, &endptr);
-		if (endptr != *newval && *endptr == '\0')
-		{
-			/* Here we change from SQL to Unix sign convention */
-			gmtoffset = -hours * SECS_PER_HOUR;
-			new_tz = pg_tzset_offset(gmtoffset);
-		}
-		else
-		{
-			/*
-			 * Otherwise assume it is a timezone name, and try to load it.
-			 */
-			new_tz = pg_tzset(*newval);
-
-			if (!new_tz)
-			{
-				/* We need a valid time zone value here, otherwise it will affect the execution of the subsequent schedule. */
-				ereport(ERROR,
-						 errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-						 errmsg("invalid value for parameter \"cron.timezone\": \"%s\"",
-								 *newval));
-			}
-
-			if (!pg_tz_acceptable(new_tz))
-			{
-				GUC_check_errmsg("time zone \"%s\" appears to use leap seconds",
-								 *newval);
-				GUC_check_errdetail("PostgreSQL does not support leap seconds.");
-				return false;
-			}
-		}
-	}
-
-	/* Test for failure in pg_tzset_offset, which we assume is out-of-range */
-	if (!new_tz)
-	{
-		GUC_check_errdetail("UTC timezone offset is out of range.");
-		return false;
-	}
-
-	/*
-	 * Pass back data for assign_timezone to use
-	 */
-	*extra = malloc(sizeof(pg_tz *));
-	if (!*extra)
-		return false;
-	*((pg_tz **) *extra) = new_tz;
-
-	return true;
 }
 
 /*
