@@ -100,7 +100,7 @@ RefreshTaskHash(void)
 	{
 		CronJob *job = (CronJob *) lfirst(jobCell);
 
-		CronTask *task = GetCronTask(job->jobId);
+		task = GetCronTask(job->jobId);
 		task->isActive = job->active;
 	}
 
