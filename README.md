@@ -37,7 +37,7 @@ SELECT cron.unschedule(42);
           t
 
 -- Vacuum every Sunday at 4:00am (GMT) in a database other than the one pg_cron is installed in
-SELECT cron.schedule_in_database('weekly-vacuum', '0 4 * * *', 'VACUUM', 'some_other_database');
+SELECT cron.schedule_in_database('weekly-vacuum', '0 4 * * 0', 'VACUUM', 'some_other_database');
  schedule
 ----------
        44
