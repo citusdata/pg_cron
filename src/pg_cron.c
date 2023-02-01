@@ -138,7 +138,7 @@ static void ManageCronTasks(List *taskList, TimestampTz currentTime);
 static void ManageCronTask(CronTask *task, TimestampTz currentTime);
 static void ExecuteSqlString(const char *sql);
 static void GetTaskFeedback(PGresult *result, CronTask *task);
-static void GetBgwTaskFeedback(shm_mq_handle *responseq, CronTask *task, bool running);
+static void GetBgwTaskFeedback(shm_mq_handle *responseq, CronTask *task);
 
 static bool jobCanceled(CronTask *task);
 static bool jobStartupTimeout(CronTask *task, TimestampTz currentTime);
@@ -149,6 +149,7 @@ static void bgw_generate_returned_message(StringInfoData *display_msg, ErrorData
 char *CronTableDatabaseName = "postgres";
 static bool CronLogStatement = true;
 static bool CronLogRun = true;
+static int CronQueueSize = 65536;
 static bool CronReloadConfig = false;
 
 /* flags set by signal handlers */
@@ -288,6 +289,18 @@ _PG_init(void)
 			PGC_POSTMASTER,
 			GUC_SUPERUSER_ONLY,
 			NULL, NULL, NULL);
+
+	DefineCustomIntVariable(
+		"cron.queue_size",
+		gettext_noop("Queue size when cron.use_background_workers is on."),
+		NULL,
+		&CronQueueSize,
+		65536,
+		65536,
+		1073741824,
+		PGC_POSTMASTER,
+		GUC_SUPERUSER_ONLY,
+		NULL, NULL, NULL);
 
 	DefineCustomEnumVariable(
 		"cron.log_min_messages",
@@ -1346,7 +1359,7 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 				CurrentResourceOwner = ResourceOwnerCreate(NULL, "pg_cron_worker");
 			#endif
 
-			#define QUEUE_SIZE ((Size) 65536)
+			#define QUEUE_SIZE ((Size) CronQueueSize)
 
 			/*
 			 * Create the shared memory that we will pass to the background
@@ -1665,6 +1678,10 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 				break;
 			}
 
+			/* still waiting for job to complete */
+			if (GetBackgroundWorkerPid(&task->handle, &pid) != BGWH_STOPPED)
+				break;
+
 			toc = shm_toc_attach(PG_CRON_MAGIC, dsm_segment_address(task->seg));
 			#if PG_VERSION_NUM < 100000
 				mq = shm_toc_lookup(toc, PG_CRON_KEY_QUEUE);
@@ -1672,16 +1689,7 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 				mq = shm_toc_lookup(toc, PG_CRON_KEY_QUEUE, false);
 			#endif
 			responseq = shm_mq_attach(mq, task->seg, NULL);
-
-			/* still waiting for job to complete */
-			if (GetBackgroundWorkerPid(&task->handle, &pid) != BGWH_STOPPED)
-			{
-				GetBgwTaskFeedback(responseq, task, true);
-				shm_mq_detach(responseq);
-				break;
-			}
-
-			GetBgwTaskFeedback(responseq, task, false);
+			GetBgwTaskFeedback(responseq, task);
 
 			task->state = CRON_TASK_DONE;
 			dsm_detach(task->seg);
@@ -1856,7 +1864,7 @@ GetTaskFeedback(PGresult *result, CronTask *task)
 }
 
 static void
-GetBgwTaskFeedback(shm_mq_handle *responseq, CronTask *task, bool running)
+GetBgwTaskFeedback(shm_mq_handle *responseq, CronTask *task)
 {
 
 	TimestampTz end_time;
@@ -1903,8 +1911,6 @@ GetBgwTaskFeedback(shm_mq_handle *responseq, CronTask *task, bool running)
 
 						if (edata.elevel >= ERROR)
 							UpdateJobRunDetail(task->runId, NULL, GetCronStatus(CRON_STATUS_FAILED), display_msg.data, NULL, &end_time);
-						else if (running)
-							UpdateJobRunDetail(task->runId, NULL, NULL, display_msg.data, NULL, NULL);
 						else
 							UpdateJobRunDetail(task->runId, NULL, GetCronStatus(CRON_STATUS_SUCCEEDED), display_msg.data, NULL, &end_time);
 					}
