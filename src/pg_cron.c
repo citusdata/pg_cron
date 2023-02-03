@@ -673,7 +673,8 @@ StartAllPendingRuns(List *taskList, TimestampTz currentTime)
 			CronJob *cronJob = GetCronJob(task->jobId);
 			entry *schedule = &cronJob->schedule;
 
-			if (schedule->flags & WHEN_REBOOT)
+			if (schedule->flags & WHEN_REBOOT &&
+				task->isActive)
 			{
 				task->pendingRunCount += 1;
 			}
