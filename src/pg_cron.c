@@ -138,7 +138,7 @@ static void ManageCronTasks(List *taskList, TimestampTz currentTime);
 static void ManageCronTask(CronTask *task, TimestampTz currentTime);
 static void ExecuteSqlString(const char *sql);
 static void GetTaskFeedback(PGresult *result, CronTask *task);
-static void GetBgwTaskFeedback(shm_mq_handle *responseq, CronTask *task, bool running);
+static void ProcessBgwTaskFeedback(CronTask *task, bool running);
 
 static bool jobCanceled(CronTask *task);
 static bool jobStartupTimeout(CronTask *task, TimestampTz currentTime);
@@ -1399,7 +1399,7 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 			 * there trying to write the queue long after we've gone away.)
 			 */
 			oldcontext = MemoryContextSwitchTo(TopMemoryContext);
-			shm_mq_attach(mq, task->seg, NULL);
+			task->sharedMemoryQueue = shm_mq_attach(mq, task->seg, NULL);
 			MemoryContextSwitchTo(oldcontext);
 
 			/*
@@ -1649,11 +1649,9 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 		case CRON_TASK_BGW_RUNNING:
 		{
 			pid_t pid;
-			shm_mq_handle *responseq;
-			shm_mq *mq;
-			shm_toc *toc;
 
 			Assert(UseBackgroundWorkers);
+
 			/* check if job has been removed */
 			if (jobCanceled(task))
 			{
@@ -1665,28 +1663,28 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 				break;
 			}
 
-			toc = shm_toc_attach(PG_CRON_MAGIC, dsm_segment_address(task->seg));
-			#if PG_VERSION_NUM < 100000
-				mq = shm_toc_lookup(toc, PG_CRON_KEY_QUEUE);
-			#else
-				mq = shm_toc_lookup(toc, PG_CRON_KEY_QUEUE, false);
-			#endif
-			responseq = shm_mq_attach(mq, task->seg, NULL);
-
 			/* still waiting for job to complete */
 			if (GetBackgroundWorkerPid(&task->handle, &pid) != BGWH_STOPPED)
 			{
-				GetBgwTaskFeedback(responseq, task, true);
-				shm_mq_detach(responseq);
-				break;
+				bool isRunning = true;
+
+				/* process notices and warnings */
+				ProcessBgwTaskFeedback(task, isRunning);
 			}
+			else
+			{
+				bool isRunning = false;
 
-			GetBgwTaskFeedback(responseq, task, false);
+				/* process remaining notices and final task result */
+				ProcessBgwTaskFeedback(task, isRunning);
 
-			task->state = CRON_TASK_DONE;
-			dsm_detach(task->seg);
-			task->seg = NULL;
-			RunningTaskCount--;
+				task->state = CRON_TASK_DONE;
+
+				dsm_detach(task->seg);
+
+				task->seg = NULL;
+				RunningTaskCount--;
+			}
 
 			break;
 		}
@@ -1855,10 +1853,17 @@ GetTaskFeedback(PGresult *result, CronTask *task)
 	PQclear(result);
 }
 
-static void
-GetBgwTaskFeedback(shm_mq_handle *responseq, CronTask *task, bool running)
-{
 
+/*
+ * ProcessBgwTaskFeedback reads messages from a shared memory queue associated
+ * with the background worker that is executing a given task. If the task is
+ * still running, the function does not block if the queue is empty. Otherwise,
+ * it reads until the end of the queue.
+ */
+static void
+ProcessBgwTaskFeedback(CronTask *task, bool running)
+{
+	shm_mq_handle *responseq = task->sharedMemoryQueue;
 	TimestampTz end_time;
 
 	Size            nbytes;
@@ -1874,11 +1879,15 @@ GetBgwTaskFeedback(shm_mq_handle *responseq, CronTask *task, bool running)
 	 */
 	for (;;)
 	{
+		/* do not wait if the task is running */
+		bool nowait = running;
+
 		/* Get next message. */
-		res = shm_mq_receive(responseq, &nbytes, &data, false);
+		res = shm_mq_receive(responseq, &nbytes, &data, nowait);
 
 		if (res != SHM_MQ_SUCCESS)
 			break;
+
 		initStringInfo(&msg);
 		resetStringInfo(&msg);
 		enlargeStringInfo(&msg, nbytes);
