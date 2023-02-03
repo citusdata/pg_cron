@@ -662,8 +662,8 @@ cron_unschedule(PG_FUNCTION_ARGS)
 Datum
 cron_unschedule_named(PG_FUNCTION_ARGS)
 {
-	Datum jobNameDatum = PG_GETARG_DATUM(0);
-	Name jobName = DatumGetName(jobNameDatum);
+	Datum jobNameDatum = 0;
+	char *jobName = NULL;
 
 	Oid userId = GetUserId();
 	char *userName = GetUserNameFromId(userId, false);
@@ -676,10 +676,18 @@ cron_unschedule_named(PG_FUNCTION_ARGS)
 	bool indexOK = false;
 	HeapTuple heapTuple = NULL;
 
+	if (PG_ARGISNULL(0))
+	{
+		ereport(ERROR, (errmsg("job_name can not be NULL")));
+	}
+
+	jobNameDatum = PG_GETARG_DATUM(0);
+	jobName = TextDatumGetCString(jobNameDatum);
+
 	cronJobsTable = table_open(CronJobRelationId(), RowExclusiveLock);
 
 	ScanKeyInit(&scanKey[0], Anum_cron_job_jobname,
-				BTEqualStrategyNumber, F_NAMEEQ, jobNameDatum);
+				BTEqualStrategyNumber, F_TEXTEQ, jobNameDatum);
 	ScanKeyInit(&scanKey[1], Anum_cron_job_username,
 				BTEqualStrategyNumber, F_TEXTEQ, userNameDatum);
 
@@ -690,7 +698,7 @@ cron_unschedule_named(PG_FUNCTION_ARGS)
 	if (!HeapTupleIsValid(heapTuple))
 	{
 		ereport(ERROR, (errmsg("could not find valid entry for job '%s'",
-							   NameStr(*jobName))));
+							   jobName)));
 	}
 
 	EnsureDeletePermission(cronJobsTable, heapTuple);
@@ -961,7 +969,7 @@ TupleToCronJob(TupleDesc tupleDescriptor, HeapTuple heapTuple)
 									 tupleDescriptor, &isJobNameNull);
 		if (!isJobNameNull)
 		{
-			job->jobName = DatumGetName(jobName);
+			job->jobName = TextDatumGetCString(jobName);
 		}
 		else
 		{
