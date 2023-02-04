@@ -13,6 +13,19 @@ SELECT cron.unschedule(1);
 -- Invalid input: input too long
 SELECT cron.schedule(repeat('a', 1000), '');
 
+-- Invalid input: missing parts
+SELECT cron.schedule('* * * *', 'SELECT 1'); 
+
+-- Invalid input: trailing characters
+SELECT cron.schedule('5 secondc', 'SELECT 1'); 
+SELECT cron.schedule('50 seconds c', 'SELECT 1'); 
+
+-- Invalid input: seconds out of range
+SELECT cron.schedule('-1 seconds', 'SELECT 1'); 
+SELECT cron.schedule('0 seconds', 'SELECT 1'); 
+SELECT cron.schedule('60 seconds', 'SELECT 1'); 
+SELECT cron.schedule('10000000000 seconds', 'SELECT 1'); 
+
 -- Try to update pg_cron on restart
 SELECT cron.schedule('@restar', 'ALTER EXTENSION pg_cron UPDATE');
 SELECT cron.schedule('@restart', 'ALTER EXTENSION pg_cron UPDATE');
@@ -117,8 +130,15 @@ CREATE OR REPLACE FUNCTION public.func1(current_setting) RETURNS text
 
 CREATE CAST (current_setting AS text) WITH FUNCTION public.func1(current_setting) AS IMPLICIT;
 
-CREATE EXTENSION pg_cron VERSION '1.4';
+CREATE EXTENSION pg_cron;
 select * from public.test;
+
+-- valid interval jobs
+SELECT cron.schedule('1 second', 'SELECT 1'); 
+SELECT cron.schedule(' 30 sEcOnDs ', 'SELECT 1'); 
+SELECT cron.schedule('59 seconds', 'SELECT 1'); 
+SELECT cron.schedule('17  seconds ', 'SELECT 1'); 
+SELECT jobid, jobname, schedule, command FROM cron.job ORDER BY jobid;
 
 -- cleaning
 DROP EXTENSION pg_cron;

@@ -4,7 +4,7 @@
 
 ## What is pg_cron?
 
-pg_cron is a simple cron-based job scheduler for PostgreSQL (10 or higher) that runs inside the database as an extension. It uses the same syntax as regular cron, but it allows you to schedule PostgreSQL commands directly from the database:
+pg_cron is a simple cron-based job scheduler for PostgreSQL (10 or higher) that runs inside the database as an extension. It uses the same syntax as regular cron, but it allows you to schedule PostgreSQL commands directly from the database. You can also use '[1-59] seconds' to schedule a job based on an interval.
 
 ```sql
 -- Delete old data on Saturday at 3:30am (GMT)
@@ -41,6 +41,9 @@ SELECT cron.schedule_in_database('weekly-vacuum', '0 4 * * 0', 'VACUUM', 'some_o
  schedule
 ----------
        44
+
+-- Call a stored procedure every 5 seconds
+SELECT cron.schedule('process-updates', '5 seconds', 'CALL process_updates()'); 
 ```
 
 pg_cron can run multiple jobs in parallel, but it runs at most one instance of a job at a time. If a second run is supposed to start before the first one finishes, then the second run is queued and started as soon as the first run completes.

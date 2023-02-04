@@ -37,6 +37,7 @@
 #include "utils/acl.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
+#include "utils/formatting.h"
 #include "utils/inval.h"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
@@ -88,6 +89,9 @@ static void AlterJob(int64 jobId, text *scheduleText, text *commandText,
 						text *databaseText, text *usernameText, bool *active);
 
 static Oid GetRoleOidIfCanLogin(char *username);
+static entry * ParseSchedule(char *scheduleText);
+static bool TryParseInterval(char *scheduleText, uint32 *secondsInterval);
+
 
 /* SQL-callable functions */
 PG_FUNCTION_INFO_V1(cron_schedule);
@@ -215,12 +219,14 @@ ScheduleCronJob(text *scheduleText, text *commandText, text *databaseText,
 
 	/* check schedule is valid */
 	schedule = text_to_cstring(scheduleText);
-	parsedSchedule = parse_cron_entry(schedule);
+	parsedSchedule = ParseSchedule(schedule);
 
 	if (parsedSchedule == NULL)
 	{
 		ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-						errmsg("invalid schedule: %s", schedule)));
+						errmsg("invalid schedule: %s", schedule),
+						errhint("Use cron format (e.g. 5 4 * * *), or interval "
+								"format '[1-59] seconds'")));
 	}
 
 	free_entry(parsedSchedule);
@@ -975,7 +981,7 @@ TupleToCronJob(TupleDesc tupleDescriptor, HeapTuple heapTuple)
 		}
 	}
 
-	parsedSchedule = parse_cron_entry(job->scheduleText);
+	parsedSchedule = ParseSchedule(job->scheduleText);
 	if (parsedSchedule != NULL)
 	{
 		/* copy the schedule and free the allocated memory immediately */
@@ -1282,12 +1288,14 @@ AlterJob(int64 jobId, text *scheduleText, text *commandText, text *databaseText,
 	if (scheduleText != NULL)
 	{
 		schedule = text_to_cstring(scheduleText);
-		parsedSchedule = parse_cron_entry(schedule);
+		parsedSchedule = ParseSchedule(schedule);
 
 		if (parsedSchedule == NULL)
 		{
 			ereport(ERROR, (errcode(ERRCODE_INVALID_PARAMETER_VALUE),
-					errmsg("invalid schedule: %s", schedule)));
+					errmsg("invalid schedule: %s", schedule),
+					errhint("Use cron format (e.g. 5 4 * * *), or interval "
+							"format '[1-59] seconds'")));
 		}
 
 		free_entry(parsedSchedule);
@@ -1463,4 +1471,57 @@ JobTableExists(void)
 												cronSchemaId);
 
 	return jobTableOid != InvalidOid;
+}
+
+
+/*
+ * ParseSchedule attempts to parse a cron schedule or an interval in seconds.
+ * The returned pointer is allocated using malloc and should be freed by the
+ * caller.
+ */
+static entry *
+ParseSchedule(char *scheduleText)
+{
+	uint32 secondsInterval = 0;
+
+	/*
+	 * Parse as interval on seconds or fall back to trying cron schedule.
+	 */
+	if (TryParseInterval(scheduleText, &secondsInterval))
+	{
+		entry *schedule = calloc(sizeof(entry), sizeof(char));
+		schedule->secondsInterval = secondsInterval;
+		return schedule;
+	}
+
+	return parse_cron_entry(scheduleText);
+}
+
+
+/*
+ * TryParseInterval returns whether scheduleText is of the form
+ * <positive number> second[s].
+ */
+static bool
+TryParseInterval(char *scheduleText, uint32 *secondsInterval)
+{
+	char plural = '\0';
+	char extra = '\0';
+	char *lowercaseSchedule = asc_tolower(scheduleText, strlen(scheduleText));
+
+	int numParts = sscanf(lowercaseSchedule, " %u second%c %c", secondsInterval,
+						  &plural, &extra);
+
+	if (numParts == 1)
+	{
+		/* <number> second (allow "2 second") */
+		return 0 < *secondsInterval && *secondsInterval < 60;
+	}
+	else if (numParts == 2 && plural == 's')
+	{
+		/* <number> seconds (allow "1 seconds") */
+		return 0 < *secondsInterval && *secondsInterval < 60;
+	}
+
+	return false;
 }

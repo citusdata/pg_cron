@@ -159,7 +159,7 @@ typedef	struct _entry {
 	uid_t		uid;	
 	gid_t		gid;
 	char		**envp;
-	char		*cmd;
+	int         secondsInterval;
 	bitstr_t	bit_decl(minute, MINUTE_COUNT);
 	bitstr_t	bit_decl(hour,   HOUR_COUNT);
 	bitstr_t	bit_decl(dom,    DOM_COUNT);

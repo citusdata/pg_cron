@@ -102,6 +102,7 @@ RefreshTaskHash(void)
 
 		task = GetCronTask(job->jobId);
 		task->isActive = job->active;
+		task->secondsInterval = job->schedule.secondsInterval;
 	}
 
 	CronJobCacheValid = true;
@@ -122,6 +123,13 @@ GetCronTask(int64 jobId)
 	if (!isPresent)
 	{
 		InitializeCronTask(task, jobId);
+
+		/*
+		 * We only initialize last run when entering into the hash.
+		 * The net effect is that the timer for the first run of an
+		 * interval job starts when pg_cron first learns about the job.
+		 */
+		task->lastStartTime = GetCurrentTimestamp();
 	}
 
 	return task;

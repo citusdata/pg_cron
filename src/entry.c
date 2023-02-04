@@ -44,8 +44,6 @@ static int	set_element(bitstr_t *, int, int, int);
 void
 free_entry(entry *e)
 {
-	if (e->cmd)
-		free(e->cmd);
 	free(e);
 }
 
