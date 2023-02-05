@@ -27,7 +27,7 @@ typedef struct FormData_cron_job
 	text database;
 	text userName;
 	bool active;
-	Name jobName;
+	text jobName;
 #endif
 } FormData_cron_job;
 
