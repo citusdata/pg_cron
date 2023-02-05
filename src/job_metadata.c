@@ -852,7 +852,6 @@ LoadCronJobList(void)
 		PopActiveSnapshot();
 		CommitTransactionCommand();
 		MemoryContextSwitchTo(originalContext);
-		pgstat_report_activity(STATE_IDLE, NULL);
 
 		return NIL;
 	}
@@ -905,7 +904,6 @@ LoadCronJobList(void)
 	PopActiveSnapshot();
 	CommitTransactionCommand();
 	MemoryContextSwitchTo(originalContext);
-	pgstat_report_activity(STATE_IDLE, NULL);
 
 	return jobList;
 }
@@ -1090,8 +1088,6 @@ InsertJobRunDetail(int64 runId, int64 *jobId, char *database, char *username, ch
 	argTypes[5] = TEXTOID;
 	argValues[5] = CStringGetTextDatum(status);
 
-	pgstat_report_activity(STATE_RUNNING, querybuf.data);
-
 	if(SPI_execute_with_args(querybuf.data,
 		argCount, argTypes, argValues, NULL, false, 1) != SPI_OK_INSERT)
 		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
@@ -1102,7 +1098,6 @@ InsertJobRunDetail(int64 runId, int64 *jobId, char *database, char *username, ch
 	PopActiveSnapshot();
 	CommitTransactionCommand();
 	MemoryContextSwitchTo(originalContext);
-	pgstat_report_activity(STATE_IDLE, NULL);
 }
 
 void
@@ -1194,8 +1189,6 @@ UpdateJobRunDetail(int64 runId, int32 *job_pid, char *status, char *return_messa
 	/* and add the where clause */
 	appendStringInfo(&querybuf, " where runid = $%d", i);
 
-	pgstat_report_activity(STATE_RUNNING, querybuf.data);
-
 	if(SPI_execute_with_args(querybuf.data,
 		i, argTypes, argValues, NULL, false, 1) != SPI_OK_UPDATE)
 		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
@@ -1206,7 +1199,6 @@ UpdateJobRunDetail(int64 runId, int32 *job_pid, char *status, char *return_messa
 	PopActiveSnapshot();
 	CommitTransactionCommand();
 	MemoryContextSwitchTo(originalContext);
-	pgstat_report_activity(STATE_IDLE, NULL);
 }
 
 
@@ -1404,8 +1396,6 @@ MarkPendingRunsAsFailed(void)
 		, CRON_SCHEMA_NAME, JOB_RUN_DETAILS_TABLE_NAME, GetCronStatus(CRON_STATUS_FAILED), GetCronStatus(CRON_STATUS_STARTING), GetCronStatus(CRON_STATUS_RUNNING));
 
 
-	pgstat_report_activity(STATE_RUNNING, querybuf.data);
-
 	if (SPI_exec(querybuf.data, 0) != SPI_OK_UPDATE)
 		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
 
@@ -1415,7 +1405,6 @@ MarkPendingRunsAsFailed(void)
 	PopActiveSnapshot();
 	CommitTransactionCommand();
 	MemoryContextSwitchTo(originalContext);
-	pgstat_report_activity(STATE_IDLE, NULL);
 }
 
 char *
