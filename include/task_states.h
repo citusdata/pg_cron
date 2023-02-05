@@ -16,6 +16,7 @@
 #include "libpq-fe.h"
 #include "postmaster/bgworker.h"
 #include "storage/dsm.h"
+#include "storage/shm_mq.h"
 #include "utils/timestamp.h"
 
 
@@ -52,6 +53,7 @@ typedef struct CronTask
 	bool isActive;
 	char *errorMessage;
 	bool freeErrorMessage;
+	shm_mq_handle *sharedMemoryQueue;
 	dsm_segment *seg;
 	BackgroundWorkerHandle handle;
 } CronTask;
