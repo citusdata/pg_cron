@@ -1,7 +1,18 @@
+### pg_cron v1.5.0 (February 7, 2023) ###
+
+* Adds the possibility of scheduling a job with a 1-59 second interval
+* Adds a cron.timezone setting to configure the timezone of cron schedules
+* Removes pg_stat_activity reporting of internal pg_cron metadata queries
+* Fixes a bug that caused issues with long job names
+* Fixes a bug that caused inactive @reboot jobs to still run
+* Fixes a bug that could limit concurrency for background workers
+* Fixes a bug that prevented compiling on ARM
+* Fixes regression tests for PostgreSQL <= 12
+
 ### pg_cron v1.4.2 (July 15, 2022) ###
 
 * Fixes a bug that could lead to privilege escalation if users can trigger CREATE EXTENSION
-* Add compatibility for PostgreSQL 15 beta
+* Add compatibility for PostgreSQL 15
 * Fixes a bug that could cause unschedule to crash
 * Ensures that cron.max_running_jobs is not higher than possible connection count
 
