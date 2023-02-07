@@ -673,13 +673,35 @@ StartAllPendingRuns(List *taskList, TimestampTz currentTime)
 			CronJob *cronJob = GetCronJob(task->jobId);
 			entry *schedule = &cronJob->schedule;
 
-			if (schedule->flags & WHEN_REBOOT)
+			if (schedule->flags & WHEN_REBOOT &&
+				task->isActive)
 			{
 				task->pendingRunCount += 1;
 			}
 		}
 
 		RebootJobsScheduled = true;
+	}
+
+	foreach(taskCell, taskList)
+	{
+		CronTask *task = (CronTask *) lfirst(taskCell);
+
+		if (task->secondsInterval > 0 && task->isActive)
+		{
+			/*
+			 * For interval jobs, if a task takes longer than the interval,
+			 * we only queue up once. So if a task that is supposed to run
+			 * every 30 seconds takes 5 minutes, we start another run
+			 * immediately after 5 minutes, but then return to regular cadence.
+			 */
+			if (task->pendingRunCount == 0 &&
+				TimestampDifferenceExceeds(task->lastStartTime, currentTime,
+										   task->secondsInterval * 1000))
+			{
+				task->pendingRunCount += 1;
+			}
+		}
 	}
 
 	if (lastMinute == 0)
@@ -1051,6 +1073,22 @@ PollForTasks(List *taskList)
 
 		if (task->state == CRON_TASK_WAITING && task->pendingRunCount == 0)
 		{
+			/*
+			 * Make sure we do not wait past the next run time of an interval
+			 * job.
+			 */
+			if (task->secondsInterval > 0)
+			{
+				TimestampTz nextRunTime =
+					TimestampTzPlusMilliseconds(task->lastStartTime,
+												task->secondsInterval * 1000);
+
+				if (TimestampDifferenceExceeds(nextRunTime, nextEventTime, 0))
+				{
+					nextEventTime = nextRunTime;
+				}
+			}
+
 			/* don't poll idle tasks */
 			continue;
 		}
@@ -1121,9 +1159,11 @@ PollForTasks(List *taskList)
 	pollTimeout = waitSeconds * 1000 + waitMicros / 1000;
 	if (pollTimeout <= 0)
 	{
-		pfree(polledTasks);
-		pfree(pollFDs);
-		return;
+		/*
+		 * Interval jobs might frequently be overdue, inject a small
+		 * 1ms wait to avoid getting into a tight loop.
+		 */
+		pollTimeout = 1;
 	}
 	else if (pollTimeout > MaxWait)
 	{
@@ -1236,6 +1276,8 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 				task->state = CRON_TASK_BGW_START;
 			else
 				task->state = CRON_TASK_START;
+
+			task->lastStartTime = currentTime;
 
 			RunningTaskCount++;
 

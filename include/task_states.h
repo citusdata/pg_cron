@@ -49,6 +49,8 @@ typedef struct CronTask
 	PGconn *connection;
 	PostgresPollingStatusType pollingStatus;
 	TimestampTz startDeadline;
+	TimestampTz lastStartTime;
+	uint32 secondsInterval;
 	bool isSocketReady;
 	bool isActive;
 	char *errorMessage;
