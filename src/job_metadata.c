@@ -1485,7 +1485,17 @@ ParseSchedule(char *scheduleText)
 	uint32 secondsInterval = 0;
 
 	/*
-	 * Parse as interval on seconds or fall back to trying cron schedule.
+	 * First try to parse as a cron schedule.
+	 */
+	entry *schedule = parse_cron_entry(scheduleText);
+	if (schedule != NULL)
+	{
+		/* valid cron schedule */
+		return schedule;
+	}
+
+	/*
+	 * Parse as interval on seconds.
 	 */
 	if (TryParseInterval(scheduleText, &secondsInterval))
 	{
@@ -1494,7 +1504,8 @@ ParseSchedule(char *scheduleText)
 		return schedule;
 	}
 
-	return parse_cron_entry(scheduleText);
+	elog(LOG, "failed to parse schedule: %s", scheduleText);
+	return NULL;
 }
 
 
@@ -1505,19 +1516,25 @@ ParseSchedule(char *scheduleText)
 static bool
 TryParseInterval(char *scheduleText, uint32 *secondsInterval)
 {
+	char lastChar = '\0';
 	char plural = '\0';
 	char extra = '\0';
 	char *lowercaseSchedule = asc_tolower(scheduleText, strlen(scheduleText));
 
-	int numParts = sscanf(lowercaseSchedule, " %u second%c %c", secondsInterval,
-						  &plural, &extra);
+	int numParts = sscanf(lowercaseSchedule, " %u secon%c%c %c", secondsInterval,
+						  &lastChar, &plural, &extra);
+	if (lastChar != 'd')
+	{
+		/* value did not have a "second" suffix */
+		return false;
+	}
 
-	if (numParts == 1)
+	if (numParts == 2)
 	{
 		/* <number> second (allow "2 second") */
 		return 0 < *secondsInterval && *secondsInterval < 60;
 	}
-	else if (numParts == 2 && plural == 's')
+	else if (numParts == 3 && plural == 's')
 	{
 		/* <number> seconds (allow "1 seconds") */
 		return 0 < *secondsInterval && *secondsInterval < 60;

@@ -1,3 +1,7 @@
+### pg_cron v1.5.1 (February 9, 2023) ###
+
+* Fixes a bug that caused incorrect parsing of some crons schedules
+
 ### pg_cron v1.5.0 (February 7, 2023) ###
 
 * Adds the possibility of scheduling a job with a 1-59 second interval

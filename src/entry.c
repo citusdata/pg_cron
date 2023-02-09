@@ -72,7 +72,7 @@ parse_cron_entry(char *schedule)
 	 *	minutes hours doms months dows USERNAME cmd\n
 	 */
 
-	ecode_e	ecode = e_none;
+	ecode_e ecode = e_none;
 	entry *e = (entry *) calloc(sizeof(entry), sizeof(char));
 	int	ch = 0;
 	char cmd[MAX_COMMAND];
@@ -231,7 +231,7 @@ parse_cron_entry(char *schedule)
 	return e;
 
  eof:
-	elog(LOG, "failed to parse entry %d", ecode);
+	elog(DEBUG1, "failed to parse entry %d", ecode);
 	free_entry(e);
 	while (ch != EOF && ch != '\n')
 		ch = get_char(file);
