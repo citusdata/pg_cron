@@ -17,7 +17,7 @@ CREATE TABLE cron.job_run_details (
 GRANT SELECT ON cron.job_run_details TO public;
 GRANT DELETE ON cron.job_run_details TO public;
 ALTER TABLE cron.job_run_details ENABLE ROW LEVEL SECURITY;
-CREATE POLICY cron_job_run_details_policy ON cron.job_run_details USING (username = current_user);
+CREATE POLICY cron_job_run_details_policy ON cron.job_run_details USING (username OPERATOR(pg_catalog.=) current_user);
 
 SELECT pg_catalog.pg_extension_config_dump('cron.job_run_details', '');
 SELECT pg_catalog.pg_extension_config_dump('cron.runid_seq', '');
