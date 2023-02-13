@@ -26,6 +26,9 @@
 #include "access/xact.h"
 #include "access/xlog.h"
 #include "catalog/pg_extension.h"
+#if (PG_VERSION_NUM >= 160000)
+#include "catalog/pg_database.h"
+#endif
 #include "catalog/indexing.h"
 #include "catalog/namespace.h"
 #include "commands/extension.h"
@@ -303,8 +306,14 @@ ScheduleCronJob(text *scheduleText, text *commandText, text *databaseText,
 	}
 
 	/* ensure the user that is used in the job can connect to the database */
+#if (PG_VERSION_NUM >= 160000)
+	aclresult = object_aclcheck(DatabaseRelationId,
+								get_database_oid(database_name, false),
+								userIdcheckacl, ACL_CONNECT);
+#else
 	aclresult = pg_database_aclcheck(get_database_oid(database_name, false),
 										userIdcheckacl, ACL_CONNECT);
+#endif
 
 	if (aclresult != ACLCHECK_OK)
 		elog(ERROR, "User %s does not have CONNECT privilege on %s",
@@ -1273,7 +1282,14 @@ AlterJob(int64 jobId, text *scheduleText, text *commandText, text *databaseText,
 	{
 		database_name = text_to_cstring(databaseText);
 		/* ensure the user that is used in the job can connect to the database */
-		aclresult = pg_database_aclcheck(get_database_oid(database_name, false), userIdcheckacl, ACL_CONNECT);
+#if (PG_VERSION_NUM >= 160000)
+		aclresult = object_aclcheck(DatabaseRelationId,
+									get_database_oid(database_name, false),
+									userIdcheckacl, ACL_CONNECT);
+#else
+		aclresult = pg_database_aclcheck(get_database_oid(database_name, false),
+										 userIdcheckacl, ACL_CONNECT);
+#endif
 
 		if (aclresult != ACLCHECK_OK)
 			elog(ERROR, "User %s does not have CONNECT privilege on %s", GetUserNameFromId(userIdcheckacl, false), database_name);
