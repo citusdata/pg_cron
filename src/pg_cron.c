@@ -948,7 +948,7 @@ static bool
 ShouldRunTask(entry *schedule, TimestampTz currentTime, bool doWild,
 			  bool doNonWild)
 {
-	time_t currentTime_t = timestamptz_to_time_t(currentTime);
+	pg_time_t currentTime_t = timestamptz_to_time_t(currentTime);
 	struct pg_tm* tm = pg_localtime(&currentTime_t, pg_tzset(cron_timezone));
 
 	int minute = tm->tm_min -FIRST_MINUTE;
