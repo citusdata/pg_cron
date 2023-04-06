@@ -1,3 +1,7 @@
+### pg_cron v1.5.2 (April 9, 2023) ###
+
+* Fixes a bug that caused crashes after upgrading binaries to 1.5, by Polina Bungina
+
 ### pg_cron v1.5.1 (February 9, 2023) ###
 
 * Fixes a bug that caused incorrect parsing of some crons schedules
