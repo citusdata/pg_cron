@@ -982,7 +982,15 @@ TupleToCronJob(TupleDesc tupleDescriptor, HeapTuple heapTuple)
 									 tupleDescriptor, &isJobNameNull);
 		if (!isJobNameNull)
 		{
-			job->jobName = TextDatumGetCString(jobName);
+			/* Handle the column type change introduced in 1.5 */
+			if (TupleDescAttr(tupleDescriptor, Anum_cron_job_jobname - 1)->atttypid == NAMEOID)
+			{
+				job->jobName = pstrdup(NameStr(*DatumGetName(jobName)));
+			}
+			else
+			{
+				job->jobName = TextDatumGetCString(jobName);
+			}
 		}
 		else
 		{
