@@ -985,7 +985,7 @@ TupleToCronJob(TupleDesc tupleDescriptor, HeapTuple heapTuple)
 			/* Handle the column type change introduced in 1.5 */
 			if (TupleDescAttr(tupleDescriptor, Anum_cron_job_jobname - 1)->atttypid == NAMEOID)
 			{
-				job->jobName = (DatumGetName(jobName))->data;
+				job->jobName = pstrdup(NameStr(*DatumGetName(jobName)));
 			}
 			else
 			{
