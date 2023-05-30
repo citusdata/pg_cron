@@ -5,13 +5,7 @@ SELECT extversion FROM pg_extension WHERE extname='pg_cron';
  1.0
 (1 row)
 
-ALTER EXTENSION pg_cron UPDATE TO '1.4';
-SELECT extversion FROM pg_extension WHERE extname='pg_cron';
- extversion 
-------------
- 1.4
-(1 row)
-
+ALTER EXTENSION pg_cron UPDATE;
 -- Vacuum every day at 10:00am (GMT)
 SELECT cron.schedule('0 10 * * *', 'VACUUM');
  schedule 
