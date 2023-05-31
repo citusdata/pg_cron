@@ -139,6 +139,13 @@ SELECT cron.schedule('59 seconds', 'SELECT 1');
 SELECT cron.schedule('17  seconds ', 'SELECT 1'); 
 SELECT jobid, jobname, schedule, command FROM cron.job ORDER BY jobid;
 
+-- valid last of day job
+SELECT cron.schedule('last-day-of-month-job1', '0 11 $ * *', 'SELECT 1');
+SELECT jobid, jobname, schedule, command FROM cron.job ORDER BY jobid;
+
+-- invalid last of day job
+SELECT cron.schedule('bad-last-dom-job1', '0 11 $foo * *', 'VACUUM FULL');
+
 -- cleaning
 DROP EXTENSION pg_cron;
 drop user pgcron_cront;

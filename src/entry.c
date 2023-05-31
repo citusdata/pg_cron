@@ -188,10 +188,21 @@ parse_cron_entry(char *schedule)
 		/* DOM (days of month)
 		 */
 
-		if (ch == '*')
-			e->flags |= DOM_STAR;
-		ch = get_list(e->dom, FIRST_DOM, LAST_DOM,
-			      PPC_NULL, ch, file);
+		if (ch == '$') {
+			ch = get_char(file);
+			if (!Is_Blank(ch)) {
+				ecode = e_dom;
+				goto eof;
+			}
+			Skip_Blanks(ch, file);
+			e->flags |= DOM_LAST;
+		} else {
+			if (ch == '*')
+				e->flags |= DOM_STAR;
+			ch = get_list(e->dom, FIRST_DOM, LAST_DOM,
+					PPC_NULL, ch, file);
+		}
+
 		if (ch == EOF) {
 			ecode = e_dom;
 			goto eof;
