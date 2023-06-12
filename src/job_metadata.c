@@ -1507,11 +1507,12 @@ static entry *
 ParseSchedule(char *scheduleText)
 {
 	uint32 secondsInterval = 0;
+	entry *schedule;
 
 	/*
 	 * First try to parse as a cron schedule.
 	 */
-	entry *schedule = parse_cron_entry(scheduleText);
+	schedule = parse_cron_entry(scheduleText);
 	if (schedule != NULL)
 	{
 		/* valid cron schedule */
@@ -1523,7 +1524,7 @@ ParseSchedule(char *scheduleText)
 	 */
 	if (TryParseInterval(scheduleText, &secondsInterval))
 	{
-		entry *schedule = calloc(sizeof(entry), sizeof(char));
+		schedule = calloc(sizeof(entry), sizeof(char));
 		schedule->secondsInterval = secondsInterval;
 		return schedule;
 	}
