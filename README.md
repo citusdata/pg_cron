@@ -1,7 +1,5 @@
 [![Citus Banner](/github-banner.png)](https://www.citusdata.com/)
 
-[![Slack Status](https://citus-slack.herokuapp.com/badge.svg)](https://citus-public.slack.com/)
-
 ## What is pg_cron?
 
 pg_cron is a simple cron-based job scheduler for PostgreSQL (10 or higher) that runs inside the database as an extension. It uses the same syntax as regular cron, but it allows you to schedule PostgreSQL commands directly from the database. You can also use '[1-59] seconds' to schedule a job based on an interval.
@@ -137,8 +135,11 @@ It may be necessary to enable `trust` authentication for connections coming from
 
 You can also use a unix domain socket directory as the hostname and enable `trust` authentication for local connections in [pg_hba.conf](https://www.postgresql.org/docs/current/static/auth-pg-hba-conf.html), which is normally safe:
 ```
-# Connect via a unix domain socket
+# Connect via a unix domain socket:
 cron.host = '/tmp'
+
+# Can also be an empty string to look for the default directory:
+cron.host = ''
 ```
 
 Alternatively, pg_cron can be configured to use background workers. In that case, the number of concurrent jobs is limited by the `max_worker_processes` setting, so you may need to raise that.
