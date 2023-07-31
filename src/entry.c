@@ -266,12 +266,12 @@ parse_cron_entry(char *schedule)
 
 
 static int
-get_list(bits, low, high, names, ch, file)
-	bitstr_t	*bits;		/* one bit per flag, default=FALSE */
-	int		low, high;	/* bounds, impl. offset for bitstr */
-	char		*names[];	/* NULL or *[] of names for these elements */
-	int		ch;		/* current character being processed */
-	FILE		*file;		/* file being read */
+get_list(bitstr_t *bits, int low, int high, char *names[], int ch, FILE *file)
+	/* bitstr_t	*bits; */		/* one bit per flag, default=FALSE */
+	/* int		low, high; */	/* bounds, impl. offset for bitstr */
+	/* char		*names[]; */	/* NULL or *[] of names for these elements */
+	/* int		ch; */		/* current character being processed */
+	/* FILE		*file; */		/* file being read */
 {
 	register int	done;
 
@@ -313,12 +313,12 @@ get_list(bits, low, high, names, ch, file)
 
 
 static int
-get_range(bits, low, high, names, ch, file)
-	bitstr_t	*bits;		/* one bit per flag, default=FALSE */
-	int		low, high;	/* bounds, impl. offset for bitstr */
-	char		*names[];	/* NULL or names of elements */
-	int		ch;		/* current character being processed */
-	FILE 		*file;		/* file being read */
+get_range(bitstr_t *bits, int low, int high, char *names[], int ch, FILE *file)
+	/* bitstr_t	*bits;		one bit per flag, default=FALSE */
+	/* int		low, high;	bounds, impl. offset for bitstr */
+	/* char		*names[];	NULL or names of elements */
+	/* int		ch;		current character being processed */
+	/* FILE 		*file;		file being read */
 {
 	/* range = number | number "-" number [ "/" number ]
 	 */
@@ -416,12 +416,12 @@ get_range(bits, low, high, names, ch, file)
 
 
 static int
-get_number(numptr, low, names, ch, file)
-	int	*numptr;	/* where does the result go? */
-	int	low;		/* offset applied to result if symbolic enum used */
-	char	*names[];	/* symbolic names, if any, for enums */
-	int	ch;		/* current character */
-	FILE 		*file;		/* source */
+get_number(int *numptr, int low, char *names[], int ch, FILE *file)
+	/* int	*numptr;	where does the result go? */
+	/* int	low;/		offset applied to result if symbolic enum used */
+	/* char	*names[];	symbolic names, if any, for enums */
+	/* int	ch;		current character */
+	/* FILE 		*file;		source */
 {
 	char	temp[MAX_TEMPSTR], *pc;
 	int	len, i, all_digits;
@@ -475,11 +475,11 @@ get_number(numptr, low, names, ch, file)
 
 
 static int
-set_element(bits, low, high, number)
-	bitstr_t	*bits; 		/* one bit per flag, default=FALSE */
-	int		low;
-	int		high;
-	int		number;
+set_element(bitstr_t *bits, int low, int high, int number)
+	/* bitstr_t	*bits; 		one bit per flag, default=FALSE */
+	/* int		low; */
+	/* int		high; */
+	/* int		number; */
 {
 	Debug(DPARS|DEXT, ("set_element(?,%d,%d,%d)\n", low, high, number))
 
