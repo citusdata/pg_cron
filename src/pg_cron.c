@@ -166,6 +166,7 @@ static int RunningTaskCount = 0;
 static int MaxRunningTasks = 0;
 static int CronLogMinMessages = WARNING;
 static bool UseBackgroundWorkers = false;
+static bool LaunchActiveJobs = true;
 
 char  *cron_timezone = NULL;
 
@@ -265,6 +266,16 @@ _PG_init(void)
 		&UseBackgroundWorkers,
 		false,
 		PGC_POSTMASTER,
+		GUC_SUPERUSER_ONLY,
+		NULL, NULL, NULL);
+
+	DefineCustomBoolVariable(
+		"cron.launch_active_jobs",
+		gettext_noop("Launch jobs that are defined as active."),
+		NULL,
+		&LaunchActiveJobs,
+		true,
+		PGC_SIGHUP,
 		GUC_SUPERUSER_ONLY,
 		NULL, NULL, NULL);
 
@@ -623,7 +634,7 @@ PgCronLauncherMain(Datum arg)
 
 		AcceptInvalidationMessages();
 
-		if (!CronJobCacheValid)
+		if (!CronJobCacheValid && LaunchActiveJobs)
 		{
 			RefreshTaskHash();
 		}
@@ -1263,7 +1274,7 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 		case CRON_TASK_WAITING:
 		{
 			/* check if job has been removed */
-			if (!task->isActive)
+			if (!task->isActive || !LaunchActiveJobs)
 			{
 				/* remove task as well */
 				RemoveTask(jobId);
