@@ -91,8 +91,10 @@
 #define MAXHOSTNAMELEN 64
 #endif
 
+#define Is_Blank(c) ((c) == '\t' || (c) == ' ')
+
 #define	Skip_Blanks(c, f) \
-			while (c == '\t' || c == ' ') \
+			while (Is_Blank(c)) \
 				c = get_char(f);
 
 #define	Skip_Nonblanks(c, f) \
@@ -124,8 +126,6 @@ typedef int time_min;
 #define	CRON_LOG_JOBEND		0x02
 #define	CRON_LOG_JOBFAILED	0x04
 #define	CRON_LOG_JOBPID		0x08
-
-#define SECONDS_PER_MINUTE 60
 
 #define	FIRST_MINUTE	0
 #define	LAST_MINUTE	59
@@ -171,6 +171,7 @@ typedef	struct _entry {
 #define	WHEN_REBOOT	0x04
 #define MIN_STAR	0x08
 #define HR_STAR		0x10
+#define DOM_LAST	0x20
 } entry;
 
 			/* the crontab database will be a list of the
