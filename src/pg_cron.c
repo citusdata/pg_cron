@@ -166,7 +166,6 @@ static int RunningTaskCount = 0;
 static int MaxRunningTasks = 0;
 static int CronLogMinMessages = WARNING;
 static bool UseBackgroundWorkers = false;
-static bool LaunchActiveJobs = true;
 
 char  *cron_timezone = NULL;
 
@@ -634,11 +633,6 @@ PgCronLauncherMain(Datum arg)
 
 		AcceptInvalidationMessages();
 
-		if (!CronJobCacheValid && LaunchActiveJobs)
-		{
-			RefreshTaskHash();
-		}
-
 		if (CronReloadConfig)
 		{
 			/* set the desired log_min_messages */
@@ -646,6 +640,16 @@ PgCronLauncherMain(Datum arg)
 			SetConfigOption("log_min_messages", cron_error_severity(CronLogMinMessages),
 												PGC_POSTMASTER, PGC_S_OVERRIDE);
 			CronReloadConfig = false;
+		}
+
+		/*
+		 * Both CronReloadConfig and CronJobCacheValid are triggered by SIGHUP.
+		 * ProcessConfigFile should come first, because RefreshTaskHash depends
+		 * on settings that might have changed.
+		 */
+		if (!CronJobCacheValid)
+		{
+			RefreshTaskHash();
 		}
 
 		taskList = CurrentTaskList();
@@ -1279,7 +1283,7 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 		case CRON_TASK_WAITING:
 		{
 			/* check if job has been removed */
-			if (!task->isActive || !LaunchActiveJobs)
+			if (!task->isActive)
 			{
 				/* remove task as well */
 				RemoveTask(jobId);

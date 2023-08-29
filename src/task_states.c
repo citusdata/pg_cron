@@ -30,6 +30,9 @@ static CronTask * GetCronTask(int64 jobId);
 static MemoryContext CronTaskContext = NULL;
 static HTAB *CronTaskHash = NULL;
 
+/* settings */
+bool LaunchActiveJobs = true;
+
 
 /*
  * InitializeTaskStateHash initializes the hash for storing task states.
@@ -101,7 +104,7 @@ RefreshTaskHash(void)
 		CronJob *job = (CronJob *) lfirst(jobCell);
 
 		task = GetCronTask(job->jobId);
-		task->isActive = job->active;
+		task->isActive = LaunchActiveJobs && job->active;
 		task->secondsInterval = job->schedule.secondsInterval;
 	}
 
