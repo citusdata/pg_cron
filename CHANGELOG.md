@@ -1,3 +1,10 @@
+### pg_cron v1.6.0 (August 29, 2023) ###
+
+* Adds a cron.launch_active_jobs setting, by Bertrand Drouvot
+* Adds support for PostgreSQL 16, by Cristoph Berg & zhjwpku
+* Adds scheduling on the last day of the month, by zhjwpku
+* Fixes a possible memory corruption bug, by zhjwpku
+
 ### pg_cron v1.5.2 (April 9, 2023) ###
 
 * Fixes a bug that caused crashes after upgrading binaries to 1.5, by Polina Bungina
