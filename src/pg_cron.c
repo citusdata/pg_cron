@@ -665,7 +665,8 @@ PgCronLauncherMain(Datum arg)
 
 	ereport(LOG, (errmsg("pg_cron scheduler shutting down")));
 
-	proc_exit(0);
+	/* return error code to trigger restart */
+	proc_exit(1);
 }
 
 
