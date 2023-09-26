@@ -1,3 +1,8 @@
+### pg_cron v1.6.1 (September 26, 2023) ###
+
+* Restart the pg_cron scheduler if cancelled
+* Fix the schema version to 1.6 (requires ALTER EXTENSION pg_cron UPDATE)
+
 ### pg_cron v1.6.0 (August 29, 2023) ###
 
 * Adds a cron.launch_active_jobs setting, by Bertrand Drouvot
