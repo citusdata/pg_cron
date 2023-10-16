@@ -3,7 +3,7 @@
 CREATE SEQUENCE cron.runid_seq;
 CREATE TABLE cron.job_run_details (
 	jobid bigint,
-	runid bigint primary key default nextval('cron.runid_seq'),
+	runid bigint primary key default pg_catalog.nextval('cron.runid_seq'),
 	job_pid integer,
 	database text,
 	username text,
