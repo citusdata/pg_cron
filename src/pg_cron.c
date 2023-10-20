@@ -967,7 +967,6 @@ ShouldRunTask(entry *schedule, TimestampTz currentTime, bool doWild,
 	pg_time_t currentTime_t = timestamptz_to_time_t(currentTime);
 	pg_time_t tomorrowTime_t = timestamptz_to_time_t(currentTime + USECS_PER_DAY);
 	struct pg_tm* cur_tm = pg_localtime(&currentTime_t, pg_tzset(cron_timezone));
-	struct pg_tm* tom_tm = pg_localtime(&tomorrowTime_t, pg_tzset(cron_timezone));
 
 	int minute = cur_tm->tm_min -FIRST_MINUTE;
 	int hour = cur_tm->tm_hour -FIRST_HOUR;
@@ -975,7 +974,12 @@ ShouldRunTask(entry *schedule, TimestampTz currentTime, bool doWild,
 	int month = cur_tm->tm_mon +1 -FIRST_MONTH;
 	int dayOfWeek = cur_tm->tm_wday -FIRST_DOW;
 
-	bool lastdom = (schedule->flags & DOM_LAST) != 0 && tom_tm->tm_mday == 1;
+	/*
+	 * pg_localtime returns a pointer to a global struct,
+	 * so cur_tm cannot be used after this point.
+	 */
+	struct pg_tm* tomorrow_tm = pg_localtime(&tomorrowTime_t, pg_tzset(cron_timezone));
+	bool lastdom = (schedule->flags & DOM_LAST) != 0 && tomorrow_tm->tm_mday == 1;
 	bool thisdom = lastdom || bit_test(schedule->dom, dayOfMonth) != 0;
 	bool thisdow = bit_test(schedule->dow, dayOfWeek);
 
