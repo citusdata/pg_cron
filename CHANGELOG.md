@@ -1,3 +1,7 @@
+### pg_cron v1.6.2 (October 20, 2023) ###
+
+* Fixes off-by-1 issue in day of month
+
 ### pg_cron v1.6.1 (September 26, 2023) ###
 
 * Restart the pg_cron scheduler if cancelled
