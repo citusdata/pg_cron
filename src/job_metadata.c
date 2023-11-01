@@ -253,7 +253,8 @@ ScheduleCronJob(text *scheduleText, text *commandText, text *databaseText,
 		appendStringInfo(&querybuf, "on conflict on constraint jobname_username_uniq ");
 		appendStringInfo(&querybuf, "do update set ");
 		appendStringInfo(&querybuf, "schedule = EXCLUDED.schedule, ");
-		appendStringInfo(&querybuf, "command = EXCLUDED.command");
+		appendStringInfo(&querybuf, "command = EXCLUDED.command, ");
+		appendStringInfo(&querybuf, "database = EXCLUDED.database");
 	}
 	else
 	{
