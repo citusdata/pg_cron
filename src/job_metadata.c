@@ -79,7 +79,6 @@ static int64 ScheduleCronJob(text *scheduleText, text *commandText,
 								bool active, text *jobnameText);
 static Oid CronExtensionOwner(void);
 static void EnsureDeletePermission(Relation cronJobsTable, HeapTuple heapTuple);
-static void InvalidateJobCacheCallback(Datum argument, Oid relationId);
 static void InvalidateJobCache(void);
 static Oid CronJobRelationId(void);
 
@@ -108,10 +107,11 @@ PG_FUNCTION_INFO_V1(cron_alter_job);
 /* global variables */
 static MemoryContext CronJobContext = NULL;
 static HTAB *CronJobHash = NULL;
-static Oid CachedCronJobRelationId = InvalidOid;
-bool CronJobCacheValid = false;
 char *CronHost = "localhost";
 bool EnableSuperuserJobs = true;
+
+/* in shared memory */
+pg_atomic_flag *CronJobCacheValid;
 
 
 /*
@@ -122,8 +122,6 @@ void
 InitializeJobMetadataCache(void)
 {
 	/* watch for invalidation events */
-	CacheRegisterRelcacheCallback(InvalidateJobCacheCallback, (Datum) 0);
-
 	CronJobContext = AllocSetContextCreate(CurrentMemoryContext,
 											 "pg_cron job context",
 											 ALLOCSET_DEFAULT_MINSIZE,
@@ -805,32 +803,9 @@ cron_job_cache_invalidate(PG_FUNCTION_ARGS)
 static void
 InvalidateJobCache(void)
 {
-	HeapTuple classTuple = NULL;
-
-	classTuple = SearchSysCache1(RELOID, ObjectIdGetDatum(CronJobRelationId()));
-	if (HeapTupleIsValid(classTuple))
-	{
-		CacheInvalidateRelcacheByTuple(classTuple);
-		ReleaseSysCache(classTuple);
-	}
+	if (!pg_atomic_unlocked_test_flag_impl(CronJobCacheValid))
+		pg_atomic_clear_flag_impl(CronJobCacheValid);
 }
-
-
-/*
- * InvalidateJobCacheCallback invalidates the job cache in response to
- * an invalidation event.
- */
-static void
-InvalidateJobCacheCallback(Datum argument, Oid relationId)
-{
-	if (relationId == CachedCronJobRelationId ||
-		CachedCronJobRelationId == InvalidOid)
-	{
-		CronJobCacheValid = false;
-		CachedCronJobRelationId = InvalidOid;
-	}
-}
-
 
 /*
  * CachedCronJobRelationId returns a cached oid of the cron.job relation.
@@ -838,14 +813,8 @@ InvalidateJobCacheCallback(Datum argument, Oid relationId)
 static Oid
 CronJobRelationId(void)
 {
-	if (CachedCronJobRelationId == InvalidOid)
-	{
-		Oid cronSchemaId = get_namespace_oid(CRON_SCHEMA_NAME, false);
-
-		CachedCronJobRelationId = get_relname_relid(JOBS_TABLE_NAME, cronSchemaId);
-	}
-
-	return CachedCronJobRelationId;
+	Oid cronSchemaId = get_namespace_oid(CRON_SCHEMA_NAME, false);
+	return get_relname_relid(JOBS_TABLE_NAME, cronSchemaId);
 }
 
 /*

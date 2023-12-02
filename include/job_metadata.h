@@ -16,6 +16,7 @@
 #if (PG_VERSION_NUM < 120000)
 #include "datatype/timestamp.h"
 #endif
+#include "port/atomics.h"
 
 typedef enum
 {
@@ -45,7 +46,7 @@ typedef struct CronJob
 
 /* global settings */
 extern char *CronHost;
-extern bool CronJobCacheValid;
+extern pg_atomic_flag *CronJobCacheValid;
 extern bool EnableSuperuserJobs;
 
 
