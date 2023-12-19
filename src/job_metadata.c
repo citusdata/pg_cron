@@ -697,8 +697,20 @@ cron_unschedule_named(PG_FUNCTION_ARGS)
 		ereport(ERROR, (errmsg("job_name can not be NULL")));
 	}
 
-	jobNameDatum = PG_GETARG_DATUM(0);
-	jobName = TextDatumGetCString(jobNameDatum);
+	/*
+	 * v1.5 changed the first argument type from "name" to "text".  Cope with
+	 * calls from "CREATE EXTENSION pg_cron VERSION '1.4'".
+	 */
+	if (get_fn_expr_argtype(fcinfo->flinfo, 0) == NAMEOID)
+	{
+		jobName = NameStr(*PG_GETARG_NAME(0));
+		jobNameDatum = CStringGetTextDatum(jobName);
+	}
+	else
+	{
+		jobNameDatum = PG_GETARG_DATUM(0);
+		jobName = TextDatumGetCString(jobNameDatum);
+	}
 
 	cronJobsTable = table_open(CronJobRelationId(), RowExclusiveLock);
 
