@@ -5,6 +5,10 @@ SELECT extversion FROM pg_extension WHERE extname='pg_cron';
  1.0
 (1 row)
 
+-- Test binary compatibility with v1.4 function signature.
+ALTER EXTENSION pg_cron UPDATE TO '1.4';
+SELECT cron.unschedule(job_name := 'no_such_job');
+ERROR:  could not find valid entry for job 'no_such_job'
 ALTER EXTENSION pg_cron UPDATE;
 -- Vacuum every day at 10:00am (GMT)
 SELECT cron.schedule('0 10 * * *', 'VACUUM');
