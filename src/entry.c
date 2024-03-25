@@ -465,7 +465,7 @@ get_number(int *numptr, int low, char *names[], int ch, FILE *file)
 		for (i = 0;  names[i] != NULL;  i++) {
 			Debug(DPARS|DEXT,
 				("get_num, compare(%s,%s)\n", names[i], temp))
-			if (!strcasecmp(names[i], temp)) {
+			if (!pg_strcasecmp(names[i], temp)) {
 				*numptr = i+low;
 				return ch;
 			}
