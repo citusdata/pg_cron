@@ -631,6 +631,8 @@ PgCronLauncherMain(Datum arg)
 		List *taskList = NIL;
 		TimestampTz currentTime = 0;
 
+		CHECK_FOR_INTERRUPTS();
+
 		AcceptInvalidationMessages();
 
 		if (CronReloadConfig)
