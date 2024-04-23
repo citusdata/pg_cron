@@ -1283,7 +1283,6 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 	CronJob *cronJob = GetCronJob(jobId);
 	PGconn *connection = task->connection;
 	ConnStatusType connectionStatus = CONNECTION_BAD;
-	TimestampTz start_time;
 
 	switch (checkState)
 	{
@@ -1540,10 +1539,10 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 				break;
 			}
 
-			start_time = GetCurrentTimestamp();
+			task->lastStartTime = GetCurrentTimestamp();
 
 			if (CronLogRun)
-				UpdateJobRunDetail(task->runId, &pid, GetCronStatus(CRON_STATUS_RUNNING), NULL, &start_time, NULL);
+				UpdateJobRunDetail(task->runId, &pid, GetCronStatus(CRON_STATUS_RUNNING), NULL, &task->lastStartTime, NULL);
 
 			task->state = CRON_TASK_BGW_RUNNING;
 			break;
@@ -1655,9 +1654,9 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 				task->startDeadline = 0;
 				task->state = CRON_TASK_RUNNING;
 
-				start_time = GetCurrentTimestamp();
+				task->lastStartTime = GetCurrentTimestamp();
 				if (CronLogRun)
-					UpdateJobRunDetail(task->runId, NULL, GetCronStatus(CRON_STATUS_RUNNING), NULL, &start_time, NULL);
+					UpdateJobRunDetail(task->runId, NULL, GetCronStatus(CRON_STATUS_RUNNING), NULL, &task->lastStartTime, NULL);
 			}
 			else
 			{
@@ -1777,8 +1776,10 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 
 			if (task->errorMessage != NULL)
 			{
-				if (CronLogRun)
-					UpdateJobRunDetail(task->runId, NULL, GetCronStatus(CRON_STATUS_FAILED), task->errorMessage, NULL, NULL);
+				if (CronLogRun) {
+					TimestampTz end_time = GetCurrentTimestamp();
+					UpdateJobRunDetail(task->runId, NULL, GetCronStatus(CRON_STATUS_FAILED), task->errorMessage, &task->lastStartTime, &end_time);
+				}
 
 				ereport(LOG, (errmsg("cron job " INT64_FORMAT " %s",
 									 jobId, task->errorMessage)));
