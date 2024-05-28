@@ -158,6 +158,11 @@ max_worker_processes = 20
 
 For security, jobs are executed in the database in which the `cron.schedule` function is called with the same permissions as the current user. In addition, users are only able to see their own jobs in the `cron.job` table.
 
+```sql
+-- View active jobs
+select * from cron.job;
+```
+
 ## Viewing job run details
 
 You can view the status of running and recently completed job runs in the `cron.job_run_details`:
