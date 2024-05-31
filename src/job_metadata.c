@@ -141,7 +141,7 @@ InitializeJobMetadataCache(void)
 void
 ResetJobMetadataCache(void)
 {
-	MemoryContextResetAndDeleteChildren(CronJobContext);
+	MemoryContextReset(CronJobContext);
 
 	CronJobHash = CreateCronJobHash();
 }
