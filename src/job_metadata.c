@@ -70,6 +70,9 @@
 #define JOB_RUN_DETAILS_TABLE_NAME "job_run_details"
 #define RUN_ID_SEQUENCE_NAME "cron.runid_seq"
 
+static bool JobTableChanged = false;;
+static bool xact_callback_registed = false;
+static void pgcron_xact_callback(XactEvent event, void *arg);
 
 /* forward declarations */
 static HTAB * CreateCronJobHash(void);
@@ -800,11 +803,15 @@ cron_job_cache_invalidate(PG_FUNCTION_ARGS)
  * Invalidate job cache ensures the job cache is reloaded on the next
  * iteration of pg_cron.
  */
-static void
+static inline void
 InvalidateJobCache(void)
 {
-	if (!pg_atomic_unlocked_test_flag_impl(CronJobCacheValid))
-		pg_atomic_clear_flag_impl(CronJobCacheValid);
+	JobTableChanged = true;
+	if (!xact_callback_registed)
+	{
+		RegisterXactCallback(pgcron_xact_callback, NULL);
+		xact_callback_registed = true;
+	}
 }
 
 /*
@@ -1548,4 +1555,22 @@ TryParseInterval(char *scheduleText, uint32 *secondsInterval)
 	}
 
 	return false;
+}
+
+/** when transaction commits or aborts, reset the JobTableChanged
+ *  when transaction commits, if the JobTableChanged is true,
+ *  set CronJobCacheValid to false
+ */
+static void
+pgcron_xact_callback(XactEvent event, void *arg)
+{
+	if (JobTableChanged && event == XACT_EVENT_COMMIT)
+	{
+		if (!pg_atomic_unlocked_test_flag_impl(CronJobCacheValid))
+			pg_atomic_clear_flag_impl(CronJobCacheValid);
+	}
+	if (event != XACT_EVENT_PRE_PREPARE && event != XACT_EVENT_PREPARE
+			&& event != XACT_EVENT_PRE_COMMIT)
+		JobTableChanged = false;
+	return;
 }
