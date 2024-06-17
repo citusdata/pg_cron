@@ -16,6 +16,9 @@ ifeq ($(CC),gcc)
 else
     PG_CPPFLAGS = -std=c99 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-implicit-fallthrough -Iinclude -I$(libpq_srcdir)
 endif
+ifeq ($(shell uname -s),SunOS)
+    PG_CPPFLAGS += -D__EXTENSIONS__
+endif
 SHLIB_LINK = $(libpq)
 EXTRA_CLEAN += $(addprefix src/,*.gcno *.gcda) # clean up after profiling runs
 
