@@ -108,7 +108,7 @@ RefreshTaskHash(void)
 		task->secondsInterval = job->schedule.secondsInterval;
 	}
 
-	CronJobCacheValid = true;
+	pg_atomic_test_set_flag_impl(CronJobCacheValid);
 }
 
 

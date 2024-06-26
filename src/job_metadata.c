@@ -70,6 +70,9 @@
 #define JOB_RUN_DETAILS_TABLE_NAME "job_run_details"
 #define RUN_ID_SEQUENCE_NAME "cron.runid_seq"
 
+static bool JobTableChanged = false;;
+static bool xact_callback_registed = false;
+static void pgcron_xact_callback(XactEvent event, void *arg);
 
 /* forward declarations */
 static HTAB * CreateCronJobHash(void);
@@ -79,7 +82,6 @@ static int64 ScheduleCronJob(text *scheduleText, text *commandText,
 								bool active, text *jobnameText);
 static Oid CronExtensionOwner(void);
 static void EnsureDeletePermission(Relation cronJobsTable, HeapTuple heapTuple);
-static void InvalidateJobCacheCallback(Datum argument, Oid relationId);
 static void InvalidateJobCache(void);
 static Oid CronJobRelationId(void);
 
@@ -108,10 +110,11 @@ PG_FUNCTION_INFO_V1(cron_alter_job);
 /* global variables */
 static MemoryContext CronJobContext = NULL;
 static HTAB *CronJobHash = NULL;
-static Oid CachedCronJobRelationId = InvalidOid;
-bool CronJobCacheValid = false;
 char *CronHost = "localhost";
 bool EnableSuperuserJobs = true;
+
+/* in shared memory */
+pg_atomic_flag *CronJobCacheValid;
 
 
 /*
@@ -122,8 +125,6 @@ void
 InitializeJobMetadataCache(void)
 {
 	/* watch for invalidation events */
-	CacheRegisterRelcacheCallback(InvalidateJobCacheCallback, (Datum) 0);
-
 	CronJobContext = AllocSetContextCreate(CurrentMemoryContext,
 											 "pg_cron job context",
 											 ALLOCSET_DEFAULT_MINSIZE,
@@ -802,35 +803,16 @@ cron_job_cache_invalidate(PG_FUNCTION_ARGS)
  * Invalidate job cache ensures the job cache is reloaded on the next
  * iteration of pg_cron.
  */
-static void
+static inline void
 InvalidateJobCache(void)
 {
-	HeapTuple classTuple = NULL;
-
-	classTuple = SearchSysCache1(RELOID, ObjectIdGetDatum(CronJobRelationId()));
-	if (HeapTupleIsValid(classTuple))
+	JobTableChanged = true;
+	if (!xact_callback_registed)
 	{
-		CacheInvalidateRelcacheByTuple(classTuple);
-		ReleaseSysCache(classTuple);
+		RegisterXactCallback(pgcron_xact_callback, NULL);
+		xact_callback_registed = true;
 	}
 }
-
-
-/*
- * InvalidateJobCacheCallback invalidates the job cache in response to
- * an invalidation event.
- */
-static void
-InvalidateJobCacheCallback(Datum argument, Oid relationId)
-{
-	if (relationId == CachedCronJobRelationId ||
-		CachedCronJobRelationId == InvalidOid)
-	{
-		CronJobCacheValid = false;
-		CachedCronJobRelationId = InvalidOid;
-	}
-}
-
 
 /*
  * CachedCronJobRelationId returns a cached oid of the cron.job relation.
@@ -838,14 +820,8 @@ InvalidateJobCacheCallback(Datum argument, Oid relationId)
 static Oid
 CronJobRelationId(void)
 {
-	if (CachedCronJobRelationId == InvalidOid)
-	{
-		Oid cronSchemaId = get_namespace_oid(CRON_SCHEMA_NAME, false);
-
-		CachedCronJobRelationId = get_relname_relid(JOBS_TABLE_NAME, cronSchemaId);
-	}
-
-	return CachedCronJobRelationId;
+	Oid cronSchemaId = get_namespace_oid(CRON_SCHEMA_NAME, false);
+	return get_relname_relid(JOBS_TABLE_NAME, cronSchemaId);
 }
 
 /*
@@ -1579,4 +1555,22 @@ TryParseInterval(char *scheduleText, uint32 *secondsInterval)
 	}
 
 	return false;
+}
+
+/** when transaction commits or aborts, reset the JobTableChanged
+ *  when transaction commits, if the JobTableChanged is true,
+ *  set CronJobCacheValid to false
+ */
+static void
+pgcron_xact_callback(XactEvent event, void *arg)
+{
+	if (JobTableChanged && event == XACT_EVENT_COMMIT)
+	{
+		if (!pg_atomic_unlocked_test_flag_impl(CronJobCacheValid))
+			pg_atomic_clear_flag_impl(CronJobCacheValid);
+	}
+	if (event != XACT_EVENT_PRE_PREPARE && event != XACT_EVENT_PREPARE
+			&& event != XACT_EVENT_PRE_COMMIT)
+		JobTableChanged = false;
+	return;
 }

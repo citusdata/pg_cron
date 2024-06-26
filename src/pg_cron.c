@@ -188,6 +188,12 @@ static const struct config_enum_entry cron_message_level_options[] = {
 
 static const char *cron_error_severity(int elevel);
 
+static shmem_request_hook_type prev_shmem_request_hook = NULL;
+static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
+static void pg_cron_shmem_request();
+static void pg_cron_shmem_startup();
+
+
 /*
  * _PG_init gets called when the extension is loaded.
  */
@@ -324,6 +330,13 @@ _PG_init(void)
 		GUC_SUPERUSER_ONLY,
 		check_timezone, NULL, NULL);
 
+	/* init shared memory */
+
+	prev_shmem_request_hook = shmem_request_hook;
+	shmem_request_hook = pg_cron_shmem_request;
+	prev_shmem_startup_hook = shmem_startup_hook;
+	shmem_startup_hook = pg_cron_shmem_startup;
+
 	/* set up common data for all our workers */
 	worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
 	worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
@@ -368,7 +381,7 @@ pg_cron_sigterm(SIGNAL_ARGS)
 static void
 pg_cron_sighup(SIGNAL_ARGS)
 {
-	CronJobCacheValid = false;
+	pg_atomic_clear_flag_impl(CronJobCacheValid);
 	CronReloadConfig = true;
 
 	if (MyProc != NULL)
@@ -649,7 +662,7 @@ PgCronLauncherMain(Datum arg)
 		 * ProcessConfigFile should come first, because RefreshTaskHash depends
 		 * on settings that might have changed.
 		 */
-		if (!CronJobCacheValid)
+		if (pg_atomic_unlocked_test_flag_impl(CronJobCacheValid))
 		{
 			RefreshTaskHash();
 		}
@@ -2348,4 +2361,33 @@ jobStartupTimeout(CronTask *task, TimestampTz currentTime)
     }
     else
         return false;
+}
+
+static void
+pg_cron_shmem_request()
+{
+
+        if (prev_shmem_request_hook)
+                prev_shmem_request_hook();
+	RequestAddinShmemSpace(MAXALIGN(sizeof(pg_atomic_flag)));
+}
+
+static void
+pg_cron_shmem_startup()
+{
+	bool found;
+	if (prev_shmem_startup_hook)
+		(*prev_shmem_startup_hook)();
+
+	/*
+	 * Create or attach to the shared memory
+	 */
+	LWLockAcquire(AddinShmemInitLock, LW_EXCLUSIVE);
+	CronJobCacheValid = ShmemInitStruct("pg_cron_job_cache", sizeof(pg_atomic_flag), &found);
+	if (!found)
+	{
+		pg_atomic_init_flag_impl(CronJobCacheValid);
+	}
+
+	LWLockRelease(AddinShmemInitLock);
 }
