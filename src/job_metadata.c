@@ -642,6 +642,7 @@ cron_unschedule(PG_FUNCTION_ARGS)
 	cronSchemaId = get_namespace_oid(CRON_SCHEMA_NAME, false);
 	cronJobIndexId = get_relname_relid(JOB_ID_INDEX_NAME, cronSchemaId);
 
+	CachedCronJobRelationId = InvalidOid;
 	cronJobsTable = table_open(CronJobRelationId(), RowExclusiveLock);
 
 	ScanKeyInit(&scanKey[0], Anum_cron_job_jobid,
@@ -667,6 +668,7 @@ cron_unschedule(PG_FUNCTION_ARGS)
 
 	CommandCounterIncrement();
 	InvalidateJobCache();
+	CachedCronJobRelationId = InvalidOid;
 
 	PG_RETURN_BOOL(true);
 }
@@ -712,6 +714,7 @@ cron_unschedule_named(PG_FUNCTION_ARGS)
 		jobName = TextDatumGetCString(jobNameDatum);
 	}
 
+	CachedCronJobRelationId = InvalidOid;
 	cronJobsTable = table_open(CronJobRelationId(), RowExclusiveLock);
 
 	ScanKeyInit(&scanKey[0], Anum_cron_job_jobname,
@@ -738,6 +741,7 @@ cron_unschedule_named(PG_FUNCTION_ARGS)
 
 	CommandCounterIncrement();
 	InvalidateJobCache();
+	CachedCronJobRelationId = InvalidOid;
 
 	PG_RETURN_BOOL(true);
 }

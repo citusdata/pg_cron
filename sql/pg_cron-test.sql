@@ -149,6 +149,15 @@ SELECT jobid, jobname, schedule, command FROM cron.job ORDER BY jobid;
 -- invalid last of day job
 SELECT cron.schedule('bad-last-dom-job1', '0 11 $foo * *', 'VACUUM FULL');
 
+-- unschedule across extension recreates
+SELECT cron.schedule('my-job1', '0 11 * * *', 'VACUUM');
+SELECT cron.unschedule('my-job1');
+DROP EXTENSION pg_cron;
+CREATE EXTENSION pg_cron;
+SELECT cron.unschedule(1);
+SELECT cron.schedule('my-job2', '* * * * *', 'VACUUM');
+SELECT cron.unschedule('my-job2');
+
 -- cleaning
 DROP EXTENSION pg_cron;
 drop user pgcron_cront;

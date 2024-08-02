@@ -285,6 +285,35 @@ SELECT jobid, jobname, schedule, command FROM cron.job ORDER BY jobid;
 SELECT cron.schedule('bad-last-dom-job1', '0 11 $foo * *', 'VACUUM FULL');
 ERROR:  invalid schedule: 0 11 $foo * *
 HINT:  Use cron format (e.g. 5 4 * * *), or interval format '[1-59] seconds'
+-- unschedule across extension recreates
+SELECT cron.schedule('my-job1', '0 11 * * *', 'VACUUM');
+ schedule 
+----------
+        6
+(1 row)
+
+SELECT cron.unschedule('my-job1');
+ unschedule 
+------------
+ t
+(1 row)
+
+DROP EXTENSION pg_cron;
+CREATE EXTENSION pg_cron;
+SELECT cron.unschedule(1);
+ERROR:  could not find valid entry for job 1
+SELECT cron.schedule('my-job2', '* * * * *', 'VACUUM');
+ schedule 
+----------
+        1
+(1 row)
+
+SELECT cron.unschedule('my-job2');
+ unschedule 
+------------
+ t
+(1 row)
+
 -- cleaning
 DROP EXTENSION pg_cron;
 drop user pgcron_cront;
