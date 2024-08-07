@@ -109,6 +109,7 @@ PG_FUNCTION_INFO_V1(cron_alter_job);
 static MemoryContext CronJobContext = NULL;
 static HTAB *CronJobHash = NULL;
 static Oid CachedCronJobRelationId = InvalidOid;
+static bool EnableCronJobRelationIdCaching = false;
 bool CronJobCacheValid = false;
 char *CronHost = "localhost";
 bool EnableSuperuserJobs = true;
@@ -123,6 +124,7 @@ InitializeJobMetadataCache(void)
 {
 	/* watch for invalidation events */
 	CacheRegisterRelcacheCallback(InvalidateJobCacheCallback, (Datum) 0);
+	EnableCronJobRelationIdCaching = true;
 
 	CronJobContext = AllocSetContextCreate(CurrentMemoryContext,
 											 "pg_cron job context",
@@ -642,7 +644,6 @@ cron_unschedule(PG_FUNCTION_ARGS)
 	cronSchemaId = get_namespace_oid(CRON_SCHEMA_NAME, false);
 	cronJobIndexId = get_relname_relid(JOB_ID_INDEX_NAME, cronSchemaId);
 
-	CachedCronJobRelationId = InvalidOid;
 	cronJobsTable = table_open(CronJobRelationId(), RowExclusiveLock);
 
 	ScanKeyInit(&scanKey[0], Anum_cron_job_jobid,
@@ -668,7 +669,6 @@ cron_unschedule(PG_FUNCTION_ARGS)
 
 	CommandCounterIncrement();
 	InvalidateJobCache();
-	CachedCronJobRelationId = InvalidOid;
 
 	PG_RETURN_BOOL(true);
 }
@@ -714,7 +714,6 @@ cron_unschedule_named(PG_FUNCTION_ARGS)
 		jobName = TextDatumGetCString(jobNameDatum);
 	}
 
-	CachedCronJobRelationId = InvalidOid;
 	cronJobsTable = table_open(CronJobRelationId(), RowExclusiveLock);
 
 	ScanKeyInit(&scanKey[0], Anum_cron_job_jobname,
@@ -741,7 +740,6 @@ cron_unschedule_named(PG_FUNCTION_ARGS)
 
 	CommandCounterIncrement();
 	InvalidateJobCache();
-	CachedCronJobRelationId = InvalidOid;
 
 	PG_RETURN_BOOL(true);
 }
@@ -767,7 +765,8 @@ EnsureDeletePermission(Relation cronJobsTable, HeapTuple heapTuple)
 	if (pg_strcasecmp(userName, ownerName) != 0)
 	{
 		/* otherwise, allow if the user has DELETE permission */
-		AclResult aclResult = pg_class_aclcheck(CronJobRelationId(), GetUserId(),
+		Oid cronJobRelationId = CronJobRelationId();
+		AclResult aclResult = pg_class_aclcheck(cronJobRelationId, GetUserId(),
 												ACL_DELETE);
 		if (aclResult != ACLCHECK_OK)
 		{
@@ -777,7 +776,7 @@ EnsureDeletePermission(Relation cronJobsTable, HeapTuple heapTuple)
 #else
 						   OBJECT_TABLE,
 #endif
-						   get_rel_name(CronJobRelationId()));
+						   get_rel_name(cronJobRelationId));
 		}
 	}
 }
@@ -846,7 +845,13 @@ CronJobRelationId(void)
 	{
 		Oid cronSchemaId = get_namespace_oid(CRON_SCHEMA_NAME, false);
 
-		CachedCronJobRelationId = get_relname_relid(JOBS_TABLE_NAME, cronSchemaId);
+		Oid cronJobRelationId = get_relname_relid(JOBS_TABLE_NAME, cronSchemaId);
+
+		if (EnableCronJobRelationIdCaching)
+		{
+			CachedCronJobRelationId = cronJobRelationId;
+		}
+		return cronJobRelationId;
 	}
 
 	return CachedCronJobRelationId;
