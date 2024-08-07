@@ -82,6 +82,7 @@ static void EnsureDeletePermission(Relation cronJobsTable, HeapTuple heapTuple);
 static void InvalidateJobCacheCallback(Datum argument, Oid relationId);
 static void InvalidateJobCache(void);
 static Oid CronJobRelationId(void);
+static Oid CronJobRelationIdUncached(void);
 
 static CronJob * TupleToCronJob(TupleDesc tupleDescriptor, HeapTuple heapTuple);
 static bool PgCronHasBeenLoaded(void);
@@ -109,7 +110,6 @@ PG_FUNCTION_INFO_V1(cron_alter_job);
 static MemoryContext CronJobContext = NULL;
 static HTAB *CronJobHash = NULL;
 static Oid CachedCronJobRelationId = InvalidOid;
-static bool EnableCronJobRelationIdCaching = false;
 bool CronJobCacheValid = false;
 char *CronHost = "localhost";
 bool EnableSuperuserJobs = true;
@@ -124,7 +124,6 @@ InitializeJobMetadataCache(void)
 {
 	/* watch for invalidation events */
 	CacheRegisterRelcacheCallback(InvalidateJobCacheCallback, (Datum) 0);
-	EnableCronJobRelationIdCaching = true;
 
 	CronJobContext = AllocSetContextCreate(CurrentMemoryContext,
 											 "pg_cron job context",
@@ -644,7 +643,7 @@ cron_unschedule(PG_FUNCTION_ARGS)
 	cronSchemaId = get_namespace_oid(CRON_SCHEMA_NAME, false);
 	cronJobIndexId = get_relname_relid(JOB_ID_INDEX_NAME, cronSchemaId);
 
-	cronJobsTable = table_open(CronJobRelationId(), RowExclusiveLock);
+	cronJobsTable = table_open(CronJobRelationIdUncached(), RowExclusiveLock);
 
 	ScanKeyInit(&scanKey[0], Anum_cron_job_jobid,
 				BTEqualStrategyNumber, F_INT8EQ, Int64GetDatum(jobId));
@@ -714,7 +713,7 @@ cron_unschedule_named(PG_FUNCTION_ARGS)
 		jobName = TextDatumGetCString(jobNameDatum);
 	}
 
-	cronJobsTable = table_open(CronJobRelationId(), RowExclusiveLock);
+	cronJobsTable = table_open(CronJobRelationIdUncached(), RowExclusiveLock);
 
 	ScanKeyInit(&scanKey[0], Anum_cron_job_jobname,
 				BTEqualStrategyNumber, F_TEXTEQ, jobNameDatum);
@@ -765,7 +764,7 @@ EnsureDeletePermission(Relation cronJobsTable, HeapTuple heapTuple)
 	if (pg_strcasecmp(userName, ownerName) != 0)
 	{
 		/* otherwise, allow if the user has DELETE permission */
-		Oid cronJobRelationId = CronJobRelationId();
+		Oid cronJobRelationId = CronJobRelationIdUncached();
 		AclResult aclResult = pg_class_aclcheck(cronJobRelationId, GetUserId(),
 												ACL_DELETE);
 		if (aclResult != ACLCHECK_OK)
@@ -810,7 +809,8 @@ InvalidateJobCache(void)
 {
 	HeapTuple classTuple = NULL;
 
-	classTuple = SearchSysCache1(RELOID, ObjectIdGetDatum(CronJobRelationId()));
+	classTuple = SearchSysCache1(RELOID,
+								 ObjectIdGetDatum(CronJobRelationIdUncached()));
 	if (HeapTupleIsValid(classTuple))
 	{
 		CacheInvalidateRelcacheByTuple(classTuple);
@@ -843,19 +843,23 @@ CronJobRelationId(void)
 {
 	if (CachedCronJobRelationId == InvalidOid)
 	{
-		Oid cronSchemaId = get_namespace_oid(CRON_SCHEMA_NAME, false);
-
-		Oid cronJobRelationId = get_relname_relid(JOBS_TABLE_NAME, cronSchemaId);
-
-		if (EnableCronJobRelationIdCaching)
-		{
-			CachedCronJobRelationId = cronJobRelationId;
-		}
-		return cronJobRelationId;
+		CachedCronJobRelationId = CronJobRelationIdUncached();
 	}
 
 	return CachedCronJobRelationId;
 }
+
+
+/*
+ * CronJobRelationIdUncached returns the oid of the cron.job relation.
+ */
+static Oid
+CronJobRelationIdUncached(void)
+{
+	Oid cronSchemaId = get_namespace_oid(CRON_SCHEMA_NAME, false);
+	return get_relname_relid(JOBS_TABLE_NAME, cronSchemaId);
+}
+
 
 /*
  * LoadCronJobList loads the current list of jobs from the
