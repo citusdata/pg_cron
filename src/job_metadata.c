@@ -674,8 +674,9 @@ cron_unschedule(PG_FUNCTION_ARGS)
 Datum
 cron_unschedule_named(PG_FUNCTION_ARGS)
 {
-	Datum jobNameDatum = 0;
+	Datum jobNameDatum = PG_GETARG_DATUM(0);
 	char *jobName = NULL;
+	RegProcedure procedure;
 
 	Oid userId = GetUserId();
 	char *userName = GetUserNameFromId(userId, false);
@@ -699,19 +700,19 @@ cron_unschedule_named(PG_FUNCTION_ARGS)
 	 */
 	if (get_fn_expr_argtype(fcinfo->flinfo, 0) == NAMEOID)
 	{
-		jobName = NameStr(*PG_GETARG_NAME(0));
-		jobNameDatum = CStringGetTextDatum(jobName);
+		procedure = F_NAMEEQ;
+		jobName = NameStr(*DatumGetName(jobNameDatum));
 	}
 	else
 	{
-		jobNameDatum = PG_GETARG_DATUM(0);
+		procedure = F_TEXTEQ;
 		jobName = TextDatumGetCString(jobNameDatum);
 	}
 
 	cronJobsTable = table_open(CronJobRelationId(), RowExclusiveLock);
 
 	ScanKeyInit(&scanKey[0], Anum_cron_job_jobname,
-				BTEqualStrategyNumber, F_TEXTEQ, jobNameDatum);
+				BTEqualStrategyNumber, procedure, jobNameDatum);
 	ScanKeyInit(&scanKey[1], Anum_cron_job_username,
 				BTEqualStrategyNumber, F_TEXTEQ, userNameDatum);
 
