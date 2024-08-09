@@ -1542,6 +1542,8 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 				break;
 			}
 
+			task->lastStartTime = GetCurrentTimestamp();
+
 			if (CronLogRun)
 				UpdateJobRunDetail(task->runId, &pid, GetCronStatus(CRON_STATUS_RUNNING), NULL, &task->lastStartTime, NULL);
 
@@ -1655,6 +1657,7 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 				task->startDeadline = 0;
 				task->state = CRON_TASK_RUNNING;
 
+				task->lastStartTime = GetCurrentTimestamp();
 				if (CronLogRun)
 					UpdateJobRunDetail(task->runId, NULL, GetCronStatus(CRON_STATUS_RUNNING), NULL, &task->lastStartTime, NULL);
 			}
