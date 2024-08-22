@@ -409,7 +409,8 @@ get_range(bitstr_t *bits, int low, int high, char *names[], int ch, FILE *file)
 	 * Code adapted from set_elements() where this error was probably intended
 	 * to be catched.
 	 */
-	if (num1 < low || num1 > high || num2 < low || num2 > high)
+	if (num1 < low || num1 > high || num2 < low || num2 > high ||
+		num3 < 0 || num3 > high)
 		return EOF;
 
 	/* range. set all elements from num1 to num2, stepping
@@ -508,7 +509,7 @@ set_range(bitstr_t *bits, int low, int high, int start, int stop, int step) {
 	Debug(DPARS|DEXT, ("set_range(?,%d,%d,%d,%d,%d)\n",
 			   low, high, start, stop, step))
 
-	if (start < low || stop > high)
+	if (start < low || stop > high || step <= 0)
 		return EOF;
 	start -= low;
 	stop -= low;
