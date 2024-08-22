@@ -9,6 +9,21 @@ SELECT extversion FROM pg_extension WHERE extname='pg_cron';
 ALTER EXTENSION pg_cron UPDATE TO '1.4';
 SELECT cron.unschedule(job_name := 'no_such_job');
 ERROR:  could not find valid entry for job 'no_such_job'
+SELECT cron.schedule('testjob', '* * * * *', 'SELECT 1');
+ schedule 
+----------
+        1
+(1 row)
+
+SELECT cron.unschedule('testjob');
+ unschedule 
+------------
+ t
+(1 row)
+
+-- Test cache invalidation
+DROP EXTENSION pg_cron;
+CREATE EXTENSION pg_cron VERSION '1.4';
 ALTER EXTENSION pg_cron UPDATE;
 -- Vacuum every day at 10:00am (GMT)
 SELECT cron.schedule('0 10 * * *', 'VACUUM');
@@ -38,6 +53,28 @@ ERROR:  invalid schedule: 5 secondc
 HINT:  Use cron format (e.g. 5 4 * * *), or interval format '[1-59] seconds'
 SELECT cron.schedule('50 seconds c', 'SELECT 1'); 
 ERROR:  invalid schedule: 50 seconds c
+HINT:  Use cron format (e.g. 5 4 * * *), or interval format '[1-59] seconds'
+-- Invalid input: step out of range
+SELECT cron.schedule('*/0 10 * * *', 'SELECT 1');
+ERROR:  invalid schedule: */0 10 * * *
+HINT:  Use cron format (e.g. 5 4 * * *), or interval format '[1-59] seconds'
+SELECT cron.schedule('-1 * * * *', 'SELECT 1');
+ERROR:  invalid schedule: -1 * * * *
+HINT:  Use cron format (e.g. 5 4 * * *), or interval format '[1-59] seconds'
+SELECT cron.schedule('*/-1 10 * * *', 'SELECT 1');
+ERROR:  invalid schedule: */-1 10 * * *
+HINT:  Use cron format (e.g. 5 4 * * *), or interval format '[1-59] seconds'
+SELECT cron.schedule('*/60 10 * * *', 'SELECT 1');
+ERROR:  invalid schedule: */60 10 * * *
+HINT:  Use cron format (e.g. 5 4 * * *), or interval format '[1-59] seconds'
+SELECT cron.schedule('* * * 13 *', 'SELECT 1');
+ERROR:  invalid schedule: * * * 13 *
+HINT:  Use cron format (e.g. 5 4 * * *), or interval format '[1-59] seconds'
+SELECT cron.schedule('* * * 0 *', 'SELECT 1');
+ERROR:  invalid schedule: * * * 0 *
+HINT:  Use cron format (e.g. 5 4 * * *), or interval format '[1-59] seconds'
+SELECT cron.schedule('*/5000000000 10 * * *', 'SELECT 1');
+ERROR:  invalid schedule: */5000000000 10 * * *
 HINT:  Use cron format (e.g. 5 4 * * *), or interval format '[1-59] seconds'
 -- Invalid input: seconds out of range
 SELECT cron.schedule('-1 seconds', 'SELECT 1'); 

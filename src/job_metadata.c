@@ -79,7 +79,6 @@ static int64 ScheduleCronJob(text *scheduleText, text *commandText,
 								bool active, text *jobnameText);
 static Oid CronExtensionOwner(void);
 static void EnsureDeletePermission(Relation cronJobsTable, HeapTuple heapTuple);
-static void InvalidateJobCacheCallback(Datum argument, Oid relationId);
 static void InvalidateJobCache(void);
 static Oid CronJobRelationId(void);
 
@@ -121,9 +120,6 @@ bool EnableSuperuserJobs = true;
 void
 InitializeJobMetadataCache(void)
 {
-	/* watch for invalidation events */
-	CacheRegisterRelcacheCallback(InvalidateJobCacheCallback, (Datum) 0);
-
 	CronJobContext = AllocSetContextCreate(CurrentMemoryContext,
 											 "pg_cron job context",
 											 ALLOCSET_DEFAULT_MINSIZE,
@@ -678,8 +674,9 @@ cron_unschedule(PG_FUNCTION_ARGS)
 Datum
 cron_unschedule_named(PG_FUNCTION_ARGS)
 {
-	Datum jobNameDatum = 0;
+	Datum jobNameDatum = PG_GETARG_DATUM(0);
 	char *jobName = NULL;
+	RegProcedure procedure;
 
 	Oid userId = GetUserId();
 	char *userName = GetUserNameFromId(userId, false);
@@ -703,19 +700,19 @@ cron_unschedule_named(PG_FUNCTION_ARGS)
 	 */
 	if (get_fn_expr_argtype(fcinfo->flinfo, 0) == NAMEOID)
 	{
-		jobName = NameStr(*PG_GETARG_NAME(0));
-		jobNameDatum = CStringGetTextDatum(jobName);
+		procedure = F_NAMEEQ;
+		jobName = NameStr(*DatumGetName(jobNameDatum));
 	}
 	else
 	{
-		jobNameDatum = PG_GETARG_DATUM(0);
+		procedure = F_TEXTEQ;
 		jobName = TextDatumGetCString(jobNameDatum);
 	}
 
 	cronJobsTable = table_open(CronJobRelationId(), RowExclusiveLock);
 
 	ScanKeyInit(&scanKey[0], Anum_cron_job_jobname,
-				BTEqualStrategyNumber, F_TEXTEQ, jobNameDatum);
+				BTEqualStrategyNumber, procedure, jobNameDatum);
 	ScanKeyInit(&scanKey[1], Anum_cron_job_username,
 				BTEqualStrategyNumber, F_TEXTEQ, userNameDatum);
 
@@ -820,7 +817,7 @@ InvalidateJobCache(void)
  * InvalidateJobCacheCallback invalidates the job cache in response to
  * an invalidation event.
  */
-static void
+void
 InvalidateJobCacheCallback(Datum argument, Oid relationId)
 {
 	if (relationId == CachedCronJobRelationId ||

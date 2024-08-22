@@ -208,6 +208,9 @@ _PG_init(void)
 								"configuration variable in postgresql.conf.")));
 	}
 
+	/* watch for invalidation events */
+	CacheRegisterRelcacheCallback(InvalidateJobCacheCallback, (Datum) 0);
+
 	DefineCustomStringVariable(
 		"cron.database_name",
 		gettext_noop("Database in which pg_cron metadata is kept."),
@@ -1539,6 +1542,8 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 				break;
 			}
 
+			task->lastStartTime = GetCurrentTimestamp();
+
 			if (CronLogRun)
 				UpdateJobRunDetail(task->runId, &pid, GetCronStatus(CRON_STATUS_RUNNING), NULL, &task->lastStartTime, NULL);
 
@@ -1652,6 +1657,7 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 				task->startDeadline = 0;
 				task->state = CRON_TASK_RUNNING;
 
+				task->lastStartTime = GetCurrentTimestamp();
 				if (CronLogRun)
 					UpdateJobRunDetail(task->runId, NULL, GetCronStatus(CRON_STATUS_RUNNING), NULL, &task->lastStartTime, NULL);
 			}

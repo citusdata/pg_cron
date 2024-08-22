@@ -42,3 +42,7 @@ pg_cron--?.?.sql
 log/
 results/
 src/*.bc
+
+regression.diffs
+regression.out
+tmp_check/
