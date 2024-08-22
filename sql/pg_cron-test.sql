@@ -29,6 +29,15 @@ SELECT cron.schedule('* * * *', 'SELECT 1');
 SELECT cron.schedule('5 secondc', 'SELECT 1'); 
 SELECT cron.schedule('50 seconds c', 'SELECT 1'); 
 
+-- Invalid input: step out of range
+SELECT cron.schedule('*/0 10 * * *', 'SELECT 1');
+SELECT cron.schedule('-1 * * * *', 'SELECT 1');
+SELECT cron.schedule('*/-1 10 * * *', 'SELECT 1');
+SELECT cron.schedule('*/60 10 * * *', 'SELECT 1');
+SELECT cron.schedule('* * * 13 *', 'SELECT 1');
+SELECT cron.schedule('* * * 0 *', 'SELECT 1');
+SELECT cron.schedule('*/5000000000 10 * * *', 'SELECT 1');
+
 -- Invalid input: seconds out of range
 SELECT cron.schedule('-1 seconds', 'SELECT 1'); 
 SELECT cron.schedule('0 seconds', 'SELECT 1'); 
