@@ -1321,6 +1321,7 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 										cronJob->database,
 										cronJob->userName,
 										cronJob->command, GetCronStatus(CRON_STATUS_STARTING));
+			break;
 		}
 
 		case CRON_TASK_START:
