@@ -442,6 +442,8 @@ get_number(int *numptr, int low, char *names[], int ch, FILE *file)
 	 */
 	pc = temp;
 	len = 0;
+	/* keep compiler quiet */
+	*numptr = 0;
 	all_digits = TRUE;
 	while (isalnum(ch)) {
 		if (++len >= MAX_TEMPSTR)
