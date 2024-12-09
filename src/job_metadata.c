@@ -846,8 +846,7 @@ CronJobRelationId(void)
 }
 
 /*
- * LoadCronJobList loads the current list of jobs from the
- * cron.job table and adds each job to the CronJobHash.
+ * LoadCronJobList loads the current list of jobs from the cron.job table.
  */
 List *
 LoadCronJobList(void)
@@ -894,26 +893,11 @@ LoadCronJobList(void)
 	{
 		MemoryContext oldContext = NULL;
 		CronJob *job = NULL;
-		Oid jobOwnerId = InvalidOid;
 
 		oldContext = MemoryContextSwitchTo(CronJobContext);
 
 		job = TupleToCronJob(tupleDescriptor, heapTuple);
-
-		jobOwnerId = get_role_oid(job->userName, false);
-		if (!EnableSuperuserJobs && superuser_arg(jobOwnerId))
-		{
-			/*
-			 * Someone inserted a superuser into the metadata. Skip over the
-			 * job when cron.enable_superuser_jobs is disabled. The memory
-			 * will be cleaned up when CronJobContext is reset.
-			 */
-			ereport(WARNING, (errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
-							  errmsg("skipping job " INT64_FORMAT " since superuser jobs "
-									 "are currently disallowed",
-									 job->jobId)));
-		}
-		else
+		if (job != NULL)
 		{
 			jobList = lappend(jobList, job);
 		}
@@ -935,8 +919,8 @@ LoadCronJobList(void)
 
 
 /*
- * TupleToCronJob takes a heap tuple and converts it into a CronJob
- * struct.
+ * TupleToCronJob takes a heap tuple, converts it into a CronJob struct and
+ * adds it to the CronJobHash if it satisfies EnableSuperuserJobs condition.
  */
 static CronJob *
 TupleToCronJob(TupleDesc tupleDescriptor, HeapTuple heapTuple)
@@ -946,6 +930,8 @@ TupleToCronJob(TupleDesc tupleDescriptor, HeapTuple heapTuple)
 	bool isNull = false;
 	bool isPresent = false;
 	entry *parsedSchedule = NULL;
+	char *jobOwner;
+	Oid jobOwnerId;
 
 	Datum jobId = heap_getattr(heapTuple, Anum_cron_job_jobid,
 							   tupleDescriptor, &isNull);
@@ -962,6 +948,22 @@ TupleToCronJob(TupleDesc tupleDescriptor, HeapTuple heapTuple)
 	Datum userName = heap_getattr(heapTuple, Anum_cron_job_username,
 								  tupleDescriptor, &isNull);
 
+	jobOwner = TextDatumGetCString(userName);
+	jobOwnerId = get_role_oid(jobOwner, false);
+	if (!EnableSuperuserJobs && superuser_arg(jobOwnerId))
+	{
+		/*
+		 * Someone inserted a superuser into the metadata. Skip over the
+		 * job when cron.enable_superuser_jobs is disabled. The memory
+		 * will be cleaned up when CronJobContext is reset.
+		 */
+		ereport(WARNING, (errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
+						  errmsg("skipping job " INT64_FORMAT " since superuser jobs "
+								 "are currently disallowed",
+								 job->jobId)));
+		return NULL;
+	}
+
 	jobKey = DatumGetInt64(jobId);
 	job = hash_search(CronJobHash, &jobKey, HASH_ENTER, &isPresent);
 
@@ -970,7 +972,7 @@ TupleToCronJob(TupleDesc tupleDescriptor, HeapTuple heapTuple)
 	job->command = TextDatumGetCString(command);
 	job->nodeName = TextDatumGetCString(nodeName);
 	job->nodePort = DatumGetInt32(nodePort);
-	job->userName = TextDatumGetCString(userName);
+	job->userName = jobOwner;
 	job->database = TextDatumGetCString(database);
 
 	if (HeapTupleHeaderGetNatts(heapTuple->t_data) >= Anum_cron_job_active)
