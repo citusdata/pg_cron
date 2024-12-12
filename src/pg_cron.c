@@ -984,17 +984,18 @@ ShouldRunTask(entry *schedule, TimestampTz currentTime, bool doWild,
 	 * so cur_tm cannot be used after this point.
 	 */
 	struct pg_tm* tomorrow_tm = pg_localtime(&tomorrowTime_t, pg_tzset(cron_timezone));
-	bool lastdom = (schedule->flags & DOM_LAST) != 0 && tomorrow_tm->tm_mday == 1;
-	bool thisdom = lastdom || bit_test(schedule->dom, dayOfMonth) != 0;
+	bool is_lastdom = tomorrow_tm->tm_mday == 1;
+	bool thisdom = bit_test(schedule->dom, dayOfMonth) != 0 || (is_lastdom && (schedule->flags & DOM_LAST) != 0);
 	bool thisdow = bit_test(schedule->dow, dayOfWeek);
-
 	if (bit_test(schedule->minute, minute) &&
-	    bit_test(schedule->hour, hour) &&
-	    bit_test(schedule->month, month) &&
-	    ( (schedule->flags & (DOM_STAR|DOW_STAR)) != 0
-	      ? (thisdom && thisdow) : (thisdom) || thisdow)) {
-		if ((doNonWild && !(schedule->flags & (MIN_STAR|HR_STAR)))
-		    || (doWild && (schedule->flags & (MIN_STAR|HR_STAR))))
+		bit_test(schedule->hour, hour) &&
+		bit_test(schedule->month, month) &&
+		((schedule->flags & (DOM_STAR | DOW_STAR)) != 0
+			 ? (thisdom && thisdow)
+			 : (thisdom || thisdow)))
+	{
+		if ((doNonWild && (schedule->flags & (MIN_STAR | HR_STAR)) == 0) ||
+			(doWild && (schedule->flags & (MIN_STAR | HR_STAR)) != 0))
 		{
 			return true;
 		}
