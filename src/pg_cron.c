@@ -1619,7 +1619,6 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 
 		case CRON_TASK_SENDING:
 		{
-			char *command = cronJob->command;
 			int sendResult = 0;
 
 			Assert(!UseBackgroundWorkers);
@@ -1648,6 +1647,7 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 				break;
 			}
 
+			char *command = cronJob->command;
 			sendResult = PQsendQuery(connection, command);
 			if (sendResult == 1)
 			{
