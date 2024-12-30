@@ -2279,8 +2279,10 @@ ExecuteSqlString(const char *sql)
 			(void) PortalRun(portal, FETCH_ALL, isTopLevel, receiver, receiver, completionTag);
 		#elif PG_VERSION_NUM < 130000
 			(void) PortalRun(portal, FETCH_ALL, isTopLevel,true, receiver, receiver, completionTag);
-		#else
+		#elif PG_VERSION_NUM < 180000
 			(void) PortalRun(portal, FETCH_ALL, isTopLevel, true, receiver, receiver, &qc);
+		#else
+			(void) PortalRun(portal, FETCH_ALL, isTopLevel, receiver, receiver, &qc);
 		#endif
 
 		/* Clean up the receiver. */
