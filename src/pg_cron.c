@@ -143,6 +143,7 @@ static void ManageCronTask(CronTask *task, TimestampTz currentTime);
 static void ExecuteSqlString(const char *sql);
 static void GetTaskFeedback(PGresult *result, CronTask *task);
 static void ProcessBgwTaskFeedback(CronTask *task, bool running);
+static void CronNoticeReceiver(void *arg, const PGresult *result);
 
 static bool jobCanceled(CronTask *task);
 static bool jobStartupTimeout(CronTask *task, TimestampTz currentTime);
@@ -1367,6 +1368,7 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 
 				connection = PQconnectStartParams(keywordArray, valueArray, false);
 				PQsetnonblocking(connection, 1);
+				PQsetNoticeReceiver(connection, CronNoticeReceiver, (void *) task);
 
 				connectionStatus = PQstatus(connection);
 				if (connectionStatus == CONNECTION_BAD)
@@ -1997,8 +1999,11 @@ ProcessBgwTaskFeedback(CronTask *task, bool running)
 							UpdateJobRunDetail(task->runId, NULL, GetCronStatus(CRON_STATUS_SUCCEEDED), display_msg.data, NULL, &end_time);
 					}
 
-					ereport(LOG, (errmsg("cron job " INT64_FORMAT ": %s",
-									 task->jobId, display_msg.data)));
+					/*
+					 * We do not log the message, since the original process probably
+					 * already did that.
+					 */
+
 					pfree(display_msg.data);
 
 					break;
@@ -2358,4 +2363,15 @@ jobStartupTimeout(CronTask *task, TimestampTz currentTime)
     }
     else
         return false;
+}
+
+
+/*
+ * CronNoticeReceiver processes a libpq notice. We generally ignore
+ * these because they are usually already logged by the original process.
+ */
+static void
+CronNoticeReceiver(void *arg, const PGresult *result)
+{
+
 }
