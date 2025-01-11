@@ -253,7 +253,7 @@ The following table keeps track of which of the major managed Postgres services 
 | [Google Cloud](https://cloud.google.com/sql/postgresql/) | :heavy_check_mark: |
 | [Heroku](https://elements.heroku.com/addons/heroku-postgresql) | :x: | 
 | [Instaclustr](https://instaclustr.com) | :heavy_check_mark:  |
-| [Neon](https://neon.tech/docs/extensions/pg-extensions#:~:text=The%20pg_cron%20extension%20is%20not%20supported) | :x: | 
+| [Neon](https://neon.tech/docs/extensions/extensions-intro#tooling-admin) | :heavy_check_mark: | 
 | [ScaleGrid](https://scalegrid.io/postgresql.html) | :heavy_check_mark:  |
 | [Scaleway](https://www.scaleway.com/en/database/) | :heavy_check_mark:  |
 | [Supabase](https://supabase.io/docs/guides/database) | :heavy_check_mark:  |
