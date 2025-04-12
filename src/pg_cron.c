@@ -2265,7 +2265,11 @@ ExecuteSqlString(const char *sql)
 		portal = CreatePortal("", true, true);
 		/* Don't display the portal in pg_cursors */
 		portal->visible = false;
-		PortalDefineQuery(portal, NULL, sql, commandTag, plantree_list, NULL);
+		#if PG_VERSION_NUM < 180000
+			PortalDefineQuery(portal, NULL, sql, commandTag, plantree_list, NULL);
+		#else
+			PortalDefineQuery(portal, NULL, sql, commandTag, plantree_list, NULL, NULL);
+		#endif
 		PortalStart(portal, NULL, 0, InvalidSnapshot);
 		PortalSetResultFormat(portal, 1, &format);		/* binary format */
 
