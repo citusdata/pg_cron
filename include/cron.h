@@ -236,24 +236,24 @@ entry * parse_cron_entry(char *);
 
 #ifdef MAIN_PROGRAM
 # if !defined(LINT) && !defined(lint)
-char	*copyright[] = {
+static char	*copyright[] = {
 		"@(#) Copyright 1988,1989,1990,1993,1994 by Paul Vixie",
 		"@(#) All rights reserved"
 	};
 # endif
 
-char	*MonthNames[] = {
+static char	*MonthNames[] = {
 		"Jan", "Feb", "Mar", "Apr", "May", "Jun",
 		"Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 		NULL
 	};
 
-char	*DowNames[] = {
+static char	*DowNames[] = {
 		"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun",
 		NULL
 	};
 
-char	*ecodes[] = {
+static char	*ecodes[] = {
 		"no error",
 		"bad minute",
 		"bad hour",
@@ -268,11 +268,11 @@ char	*ecodes[] = {
 	};
 
 
-char	*ProgramName;
-int	LineNumber;
-time_t	StartTime;
-time_min virtualTime;
-time_min clockTime;
+static char	*ProgramName;
+static int	LineNumber;
+static time_t	StartTime;
+static time_min virtualTime;
+static time_min clockTime;
 
 # if DEBUGGING
 int	DebugFlags;

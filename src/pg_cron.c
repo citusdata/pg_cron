@@ -168,7 +168,7 @@ static int MaxRunningTasks = 0;
 static int CronLogMinMessages = WARNING;
 static bool UseBackgroundWorkers = false;
 
-char  *cron_timezone = NULL;
+static char  *cron_timezone = NULL;
 
 static const struct config_enum_entry cron_message_level_options[] = {
 	{"debug5", DEBUG5, false},
@@ -2265,7 +2265,11 @@ ExecuteSqlString(const char *sql)
 		portal = CreatePortal("", true, true);
 		/* Don't display the portal in pg_cursors */
 		portal->visible = false;
-		PortalDefineQuery(portal, NULL, sql, commandTag, plantree_list, NULL);
+		#if PG_VERSION_NUM < 180000
+						PortalDefineQuery(portal, NULL, sql, commandTag, plantree_list, NULL);
+		#else
+						PortalDefineQuery(portal, NULL, sql, commandTag, plantree_list, NULL, NULL);
+		#endif
 		PortalStart(portal, NULL, 0, InvalidSnapshot);
 		PortalSetResultFormat(portal, 1, &format);		/* binary format */
 
