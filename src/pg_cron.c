@@ -120,7 +120,7 @@ typedef enum
 /* forward declarations */
 void _PG_init(void);
 void _PG_fini(void);
-static void pg_cron_sigterm(SIGNAL_ARGS);
+static  void pg_cron_sigterm(SIGNAL_ARGS);
 static void pg_cron_sighup(SIGNAL_ARGS);
 PGDLLEXPORT void PgCronLauncherMain(Datum arg);
 PGDLLEXPORT void CronBackgroundWorker(Datum arg);
@@ -168,7 +168,7 @@ static int MaxRunningTasks = 0;
 static int CronLogMinMessages = WARNING;
 static bool UseBackgroundWorkers = false;
 
-static char  *cron_timezone = NULL;
+char  *cron_timezone = NULL;
 
 static const struct config_enum_entry cron_message_level_options[] = {
 	{"debug5", DEBUG5, false},
