@@ -168,7 +168,7 @@ static int MaxRunningTasks = 0;
 static int CronLogMinMessages = WARNING;
 static bool UseBackgroundWorkers = false;
 
-static char  *cron_timezone = NULL;
+char  *cron_timezone = NULL;
 
 static const struct config_enum_entry cron_message_level_options[] = {
 	{"debug5", DEBUG5, false},
