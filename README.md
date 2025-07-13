@@ -39,7 +39,7 @@ CREATE TABLE cron.job (
 );
 ```
 
-Based on your configurations, when a job is triggered, the extension creates a Postgres connection or database worker, for the duration of the job. Pg_cron can run multiple jobs in parallel, but only one instance of each specific job at a time. If a second instance is triggered before the first finishes, it’s queued and starts as soon as the first one completes.
+Based on your configurations, to execute a job, the extension establishes a Postgres connection or spawns a database worker. Pg_cron can run multiple jobs in parallel, but only one instance of each specific job at a time. If a second instance is triggered before the first finishes, it’s queued and starts as soon as the first one completes.
 
 # Cron syntax
 
@@ -57,7 +57,7 @@ It uses the same syntax as regular cron, but it allows you to schedule PostgreSQ
  * * * * *
 ```
 
-The code in pg_cron that handles parsing and scheduling comes directly from the cron source code by Paul Vixie, hence the same options are supported. The schedule uses the standard cron syntax, in which * means "run every time period", and a specific number means "but only at this time":
+The code in pg_cron that handles parsing and scheduling comes directly from the [cron source code by Paul Vixie](https://github.com/vixie/cron), hence the same options are supported. The schedule uses the standard cron syntax, in which * means "run every time period", and a specific number means "but only at this time".
 
 
 An easy way to create a cron schedule is: [crontab.guru](http://crontab.guru/).
@@ -88,7 +88,7 @@ Cron jobs can be managed by directly interacting with the `cron.job` table if yo
 - [`cron.unschedule`](#removing-a-cron-job)
 - [`cron.alter_job`](#altering-a-cron-job)
 
-> Note, an [RLS policy](https://www.postgresql.org/docs/current/ddl-rowsecurity.html) ensures that jobs can only be seen and modified by the user that created them, unless the user is a superuser, part of the same role group, or has the `bypassrls` attribute.
+> Note, an [RLS policy](https://www.postgresql.org/docs/current/ddl-rowsecurity.html) ensures that jobs can only be seen and modified by the user that created them, unless the user is a superuser or has the `bypassrls` attribute.
 
 ### Creating a cron job
 
@@ -144,7 +144,11 @@ SELECT cron.schedule(
 
 ```sql
 -- Call a stored procedure every 5 seconds
-SELECT cron.schedule('process-updates', '5 seconds', 'CALL process_updates()');
+SELECT cron.schedule(
+       'process-updates',
+       '5 seconds',
+       'CALL process_updates()'
+);
 -- returns cron id
 ```
 
@@ -152,7 +156,11 @@ SELECT cron.schedule('process-updates', '5 seconds', 'CALL process_updates()');
 
 ```sql
 -- Process payroll at 12:00 of the last day of each month
-SELECT cron.schedule('process-payroll', '0 12 $ * *', 'CALL process_payroll()');
+SELECT cron.schedule(
+       'process-payroll',
+       '0 12 $ * *',
+       'CALL process_payroll()'
+);
 -- returns cron id
 ```
 
@@ -247,7 +255,11 @@ SELECT cron.alter_job(42, '0 10 * * *');
 
 ```sql
 -- change job's command
-SELECT cron.alter_job(42, '0 10 * * *', 'VACUUM', username := 'some_other_user');
+SELECT cron.alter_job(
+       42, '0 10 * * *',
+       'VACUUM',
+       username := 'some_other_user'
+);
 -- returns void
 ```
 
