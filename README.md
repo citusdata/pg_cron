@@ -39,12 +39,13 @@ CREATE TABLE cron.job (
 );
 ```
 
-Based on your configurations, to execute a job, the extension establishes a Postgres connection or spawns a database worker. Pg_cron can run multiple jobs in parallel, but only one instance of each specific job at a time. If a second instance is triggered before the first finishes, it’s queued and starts as soon as the first one completes.
+Based on your configurations, to execute a job, the extension establishes a Postgres connection or spawns a database worker. 
+
+pg_cron can run multiple jobs in parallel, but only one instance of each specific job at a time. If a second instance is triggered before the first finishes, it’s queued and starts as soon as the first one completes.
 
 # Cron syntax
 
-It uses the same syntax as regular cron, but it allows you to schedule PostgreSQL commands directly from the database. 
-
+The code in pg_cron that handles parsing and scheduling comes directly from the [cron source code by Paul Vixie](https://github.com/vixie/cron), hence the same options are supported.
 ```
  ┌───────────── min (0 - 59)
  │ ┌────────────── hour (0 - 23)
@@ -56,9 +57,6 @@ It uses the same syntax as regular cron, but it allows you to schedule PostgreSQ
  │ │ │ │ │
  * * * * *
 ```
-
-The code in pg_cron that handles parsing and scheduling comes directly from the [cron source code by Paul Vixie](https://github.com/vixie/cron), hence the same options are supported. The schedule uses the standard cron syntax, in which * means "run every time period", and a specific number means "but only at this time".
-
 
 An easy way to create a cron schedule is: [crontab.guru](http://crontab.guru/).
 
@@ -74,10 +72,10 @@ Example cron schedules:
 * * * * *     # every minute
 */5 * * * *   # every 5 minutes
 0 * * * *     # every hour
-0 0 * * *     # every day at midnight
-0 0 * * 1-5   # every weekday at midnight
-0 1 * * 0     # every sunday at 1am
-0 13 2 6 *    # every june 2nd at 1pm
+0 0 * * *     # daily at 12AM
+0 0 * * 1-5   # 12AM every weekday
+0 1 * * 0     # 1AM every Sunday
+0 13 2 6 *    # 1PM on the 2nd of June
 ```
 
 # Managing and creating jobs
@@ -256,7 +254,8 @@ SELECT cron.alter_job(42, '0 10 * * *');
 ```sql
 -- change job's command
 SELECT cron.alter_job(
-       42, '0 10 * * *',
+       42,
+       '0 10 * * *',
        'VACUUM',
        username := 'some_other_user'
 );
@@ -299,7 +298,7 @@ make && sudo PATH=$PATH make install
 
 # Setting up pg_cron
 
-To start the pg_cron background worker when PostgreSQL starts, you need to add pg_cron to `shared_preload_libraries` in postgresql.conf. Note that pg_cron does not run any jobs as a long a server is in [hot standby](https://www.postgresql.org/docs/current/static/hot-standby.html) mode, but it automatically starts when the server is promoted.
+To start the pg_cron background worker, you need to add pg_cron to `shared_preload_libraries` in postgresql.conf. Note that pg_cron does not run any jobs as a long a server is in [hot standby](https://www.postgresql.org/docs/current/static/hot-standby.html) mode, but it automatically starts when the server is promoted.
 
 ```
 # add to postgresql.conf
@@ -433,7 +432,7 @@ If you do not want to use `cron.job_run_details` at all, then you can add `cron.
 
 ### Other cron logging settings
 
-If the `cron.log_statement` setting is configured, jobs will be logged before execution. The `cron.log_min_messages` setting controls the [minimum level of messages](https://www.postgresql.org/docs/current/runtime-config-logging.html#RUNTIME-CONFIG-SEVERITY-LEVELS) that will be logged.
+If the `cron.log_statement` setting is configured, jobs will be logged before execution. The `cron.log_min_messages` setting controls the [minimum level of messages](https://www.postgresql.org/docs/current/runtime-config-logging.html#RUNTIME-CONFIG-SEVERITY-LEVELS) that will be recorded.
 
 # Example use cases
 
