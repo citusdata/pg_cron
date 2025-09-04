@@ -1,3 +1,15 @@
+### pg_cron v1.6.7 (September 4, 2025) ###
+
+* Fix compile errors on newer versions of GCC @marcoslot in https://github.com/citusdata/pg_cron/pull/403
+
+### pg_cron v1.6.6 (September 4, 2025) ###
+
+* Postgres 18 support by @AndrewJackson2020 @esiaero @francoricci
+* Stop logging notices and repeating log messages by @marcoslot in https://github.com/citusdata/pg_cron/pull/378
+* Fixes a possible crash for unavailable cron jobs @SeleznevPavel in https://github.com/citusdata/pg_cron/pull/370
+* Fix build issue FreeBSD 14.3 @francoricci in https://github.com/citusdata/pg_cron/pull/394
+* Fix type mismatch in dsm_attach() argument by using DatumGetUInt32() by @yjhjstz in https://github.com/citusdata/pg_cron/pull/395
+
 ### pg_cron v1.6.5 (December 12, 2024) ###
 
 * Fix superuser check before adding job to CronJobHash by @CyberDem0n in https://github.com/citusdata/pg_cron/pull/367
