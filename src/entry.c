@@ -41,21 +41,6 @@ char	*DowNames[] = {
 		NULL
 	};
 
-char	*ecodes[] = {
-		"no error",
-		"bad minute",
-		"bad hour",
-		"bad day-of-month",
-		"bad month",
-		"bad day-of-week",
-		"bad command",
-		"bad time specifier",
-		"bad username",
-		"command too long",
-		NULL
-	};
-
-
 # if DEBUGGING
 int	DebugFlags;
 char	*DebugFlagNames[] = {	/* sync with #defines */
