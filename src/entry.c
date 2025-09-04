@@ -30,6 +30,40 @@
 #include "cron.h"
 
 
+char	*MonthNames[] = {
+		"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+		"Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+		NULL
+	};
+
+char	*DowNames[] = {
+		"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun",
+		NULL
+	};
+
+char	*ecodes[] = {
+		"no error",
+		"bad minute",
+		"bad hour",
+		"bad day-of-month",
+		"bad month",
+		"bad day-of-week",
+		"bad command",
+		"bad time specifier",
+		"bad username",
+		"command too long",
+		NULL
+	};
+
+
+# if DEBUGGING
+int	DebugFlags;
+char	*DebugFlagNames[] = {	/* sync with #defines */
+		"ext", "sch", "proc", "pars", "load", "misc", "test", "bit",
+		NULL		/* NULL must be last element */
+	};
+# endif /* DEBUGGING */
+
 typedef	enum ecode {
 	e_none, e_minute, e_hour, e_dom, e_month, e_dow,
 	e_cmd, e_timespec, e_username, e_cmd_len
