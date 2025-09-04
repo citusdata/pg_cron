@@ -29,6 +29,8 @@
 #include <string.h>
 #include "cron.h"
 
+int	LineNumber;
+
 
 /* get_char(file) : like getc() but increment LineNumber on newlines
  */

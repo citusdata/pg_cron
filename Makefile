@@ -14,7 +14,7 @@ OBJS = $(patsubst %.c,%.o,$(wildcard src/*.c))
 ifeq ($(CC),gcc)
     PG_CPPFLAGS = -std=c99 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-uninitialized -Wno-implicit-fallthrough -Iinclude -I$(libpq_srcdir)
 else
-    PG_CPPFLAGS = -std=c99 -Wall -Wextra -Werror -Wno-missing-variable-declarations -Wno-unused-parameter -Wno-implicit-fallthrough -Iinclude -I$(libpq_srcdir)
+    PG_CPPFLAGS = -std=c99 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-implicit-fallthrough -Iinclude -I$(libpq_srcdir)
 endif
 ifeq ($(shell uname -s),SunOS)
     PG_CPPFLAGS += -Wno-sign-compare -D__EXTENSIONS__
