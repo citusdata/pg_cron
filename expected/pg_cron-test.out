@@ -5,6 +5,20 @@ SELECT extversion FROM pg_extension WHERE extname='pg_cron';
  1.0
 (1 row)
 
+-- Test binary compatibility with v1.3 function signature.
+ALTER EXTENSION pg_cron UPDATE TO '1.3';
+SELECT cron.schedule('test', '* * * * *', 'SELECT 1');
+ schedule 
+----------
+        1
+(1 row)
+
+SELECT cron.unschedule('test');
+ unschedule 
+------------
+ t
+(1 row)
+
 -- Test binary compatibility with v1.4 function signature.
 ALTER EXTENSION pg_cron UPDATE TO '1.4';
 SELECT cron.unschedule(job_name := 'no_such_job');
@@ -12,7 +26,7 @@ ERROR:  could not find valid entry for job 'no_such_job'
 SELECT cron.schedule('testjob', '* * * * *', 'SELECT 1');
  schedule 
 ----------
-        1
+        2
 (1 row)
 
 SELECT cron.unschedule('testjob');

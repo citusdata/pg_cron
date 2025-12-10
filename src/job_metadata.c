@@ -491,6 +491,12 @@ cron_schedule_named(PG_FUNCTION_ARGS)
 
 	if (PG_ARGISNULL(0))
 		ereport(ERROR, (errmsg("job_name can not be NULL")));
+	/*
+	* v1.4 changed the first argument type from "name" to "text". Cope with
+	* calls from "CREATE EXTENSION pg_cron VERSION '1.3'".
+	*/
+	else if (get_fn_expr_argtype(fcinfo->flinfo, 0) == NAMEOID)
+		jobnameText = cstring_to_text(NameStr(*PG_GETARG_NAME(0)));
 	else
 		jobnameText = PG_GETARG_TEXT_P(0);
 
