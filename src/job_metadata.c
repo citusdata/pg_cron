@@ -821,6 +821,7 @@ void
 InvalidateJobCacheCallback(Datum argument, Oid relationId)
 {
 	if (relationId == CachedCronJobRelationId ||
+		relationId == InvalidOid ||
 		CachedCronJobRelationId == InvalidOid)
 	{
 		CronJobCacheValid = false;
