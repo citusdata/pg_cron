@@ -95,7 +95,7 @@
 
 
 #ifdef PG_MODULE_MAGIC_EXT
-PG_MODULE_MAGIC_EXT(.name = "pg_cron", .version = "1.6.7");
+PG_MODULE_MAGIC_EXT(.name = "pg_cron", .version = PG_CRON_VERSION);
 #else
 PG_MODULE_MAGIC;
 #endif
