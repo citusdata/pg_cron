@@ -949,6 +949,7 @@ TupleToCronJob(TupleDesc tupleDescriptor, HeapTuple heapTuple)
 	Datum userName = heap_getattr(heapTuple, Anum_cron_job_username,
 								  tupleDescriptor, &isNull);
 
+	jobKey = DatumGetInt64(jobId);
 	jobOwner = TextDatumGetCString(userName);
 	jobOwnerId = get_role_oid(jobOwner, false);
 	if (!EnableSuperuserJobs && superuser_arg(jobOwnerId))
@@ -960,12 +961,10 @@ TupleToCronJob(TupleDesc tupleDescriptor, HeapTuple heapTuple)
 		 */
 		ereport(WARNING, (errcode(ERRCODE_INSUFFICIENT_PRIVILEGE),
 						  errmsg("skipping job " INT64_FORMAT " since superuser jobs "
-								 "are currently disallowed",
-								 job->jobId)));
+								 "are currently disallowed", jobKey)));
 		return NULL;
 	}
 
-	jobKey = DatumGetInt64(jobId);
 	job = hash_search(CronJobHash, &jobKey, HASH_ENTER, &isPresent);
 
 	job->jobId = DatumGetInt64(jobId);
