@@ -1,5 +1,9 @@
 CREATE EXTENSION pg_cron VERSION '1.0';
 SELECT extversion FROM pg_extension WHERE extname='pg_cron';
+-- Test binary compatibility with v1.3 function signature.
+ALTER EXTENSION pg_cron UPDATE TO '1.3';
+SELECT cron.schedule('test', '* * * * *', 'SELECT 1');
+SELECT cron.unschedule('test');
 -- Test binary compatibility with v1.4 function signature.
 ALTER EXTENSION pg_cron UPDATE TO '1.4';
 SELECT cron.unschedule(job_name := 'no_such_job');
