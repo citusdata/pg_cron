@@ -94,7 +94,11 @@
 #include "utils/builtins.h"
 
 
+#ifdef PG_MODULE_MAGIC_EXT
+PG_MODULE_MAGIC_EXT(.name = "pg_cron", .version = PG_CRON_VERSION);
+#else
 PG_MODULE_MAGIC;
+#endif
 
 #ifndef MAXINT8LEN
 #define MAXINT8LEN 20
