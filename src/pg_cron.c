@@ -72,6 +72,11 @@
 #include "mb/pg_wchar.h"
 #include "parser/analyze.h"
 #include "pgstat.h"
+#if PG_VERSION_NUM >= 130000
+#include "postmaster/interrupt.h"
+#else
+#define SignalHandlerForConfigReload PostgresSigHupHandler
+#endif
 #include "postmaster/postmaster.h"
 #include "utils/builtins.h"
 #include "utils/fmgroids.h"
@@ -120,8 +125,6 @@ typedef enum
 /* forward declarations */
 void _PG_init(void);
 void _PG_fini(void);
-static  void pg_cron_sigterm(SIGNAL_ARGS);
-static void pg_cron_sighup(SIGNAL_ARGS);
 PGDLLEXPORT void PgCronLauncherMain(Datum arg);
 PGDLLEXPORT void CronBackgroundWorker(Datum arg);
 
@@ -154,10 +157,6 @@ static void bgw_generate_returned_message(StringInfoData *display_msg, ErrorData
 char *CronTableDatabaseName = "postgres";
 static bool CronLogStatement = true;
 static bool CronLogRun = true;
-static bool CronReloadConfig = false;
-
-/* flags set by signal handlers */
-static volatile sig_atomic_t got_sigterm = false;
 
 /* global variables */
 static int CronTaskStartTimeout = 10000; /* maximum connection time */
@@ -349,39 +348,6 @@ _PG_init(void)
 
 
 /*
- * Signal handler for SIGTERM
- *		Set a flag to let the main loop to terminate, and set our latch to wake
- *		it up.
- */
-static void
-pg_cron_sigterm(SIGNAL_ARGS)
-{
-	got_sigterm = true;
-
-	if (MyProc != NULL)
-	{
-		SetLatch(&MyProc->procLatch);
-	}
-}
-
-
-/*
- * Signal handler for SIGHUP
- *		Set a flag to tell the main loop to reload the cron jobs.
- */
-static void
-pg_cron_sighup(SIGNAL_ARGS)
-{
-	CronJobCacheValid = false;
-	CronReloadConfig = true;
-
-	if (MyProc != NULL)
-	{
-		SetLatch(&MyProc->procLatch);
-	}
-}
-
-/*
  * pg_cron_cmdTuples -
  *      mainly copy/pasted from PQcmdTuples
  *      If the last command was INSERT/UPDATE/DELETE/MOVE/FETCH/COPY, return
@@ -563,9 +529,9 @@ PgCronLauncherMain(Datum arg)
 	struct rlimit limit;
 
 	/* Establish signal handlers before unblocking signals. */
-	pqsignal(SIGHUP, pg_cron_sighup);
+	pqsignal(SIGHUP, SignalHandlerForConfigReload);
 	pqsignal(SIGINT, SIG_IGN);
-	pqsignal(SIGTERM, pg_cron_sigterm);
+	pqsignal(SIGTERM, die);
 
 	/* We're now ready to receive signals */
 	BackgroundWorkerUnblockSignals();
@@ -630,7 +596,7 @@ PgCronLauncherMain(Datum arg)
 
 	MemoryContextSwitchTo(CronLoopContext);
 
-	while (!got_sigterm)
+	for (;;)
 	{
 		List *taskList = NIL;
 		TimestampTz currentTime = 0;
@@ -639,20 +605,18 @@ PgCronLauncherMain(Datum arg)
 
 		AcceptInvalidationMessages();
 
-		if (CronReloadConfig)
+		if (ConfigReloadPending)
 		{
 			/* set the desired log_min_messages */
 			ProcessConfigFile(PGC_SIGHUP);
 			SetConfigOption("log_min_messages", cron_error_severity(CronLogMinMessages),
 												PGC_POSTMASTER, PGC_S_OVERRIDE);
-			CronReloadConfig = false;
+			ConfigReloadPending = false;
+
+			/* Some settings might have changed, force RefreshTaskHash() */
+			CronJobCacheValid = false;
 		}
 
-		/*
-		 * Both CronReloadConfig and CronJobCacheValid are triggered by SIGHUP.
-		 * ProcessConfigFile should come first, because RefreshTaskHash depends
-		 * on settings that might have changed.
-		 */
 		if (!CronJobCacheValid)
 		{
 			RefreshTaskHash();
@@ -669,10 +633,7 @@ PgCronLauncherMain(Datum arg)
 		MemoryContextReset(CronLoopContext);
 	}
 
-	ereport(LOG, (errmsg("pg_cron scheduler shutting down")));
-
-	/* return error code to trigger restart */
-	proc_exit(1);
+	/* Not reachable */
 }
 
 
