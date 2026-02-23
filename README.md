@@ -458,9 +458,10 @@ The following table keeps track of which of the major managed Postgres services 
 | [Crunchy Bridge](https://www.crunchydata.com/products/crunchy-bridge/?ref=producthunt) | :heavy_check_mark: |
 | [DigitalOcean](https://www.digitalocean.com/products/managed-databases/) | :heavy_check_mark: |
 | [Google Cloud](https://cloud.google.com/sql/postgresql/) | :heavy_check_mark: |
-| [Heroku](https://elements.heroku.com/addons/heroku-postgresql) | :x: | 
+| [Heroku](https://elements.heroku.com/addons/heroku-postgresql) | :x: |
 | [Instaclustr](https://instaclustr.com) | :heavy_check_mark:  |
-| [Neon](https://neon.tech/docs/extensions/extensions-intro#tooling-admin) | :heavy_check_mark: | 
+| [Neon](https://neon.tech/docs/extensions/extensions-intro#tooling-admin) | :heavy_check_mark: |
+| [PlanetScale](https://planetscale.com/docs/postgres/extensions) | :heavy_check_mark: |
 | [ScaleGrid](https://scalegrid.io/postgresql.html) | :heavy_check_mark:  |
 | [Scaleway](https://www.scaleway.com/en/database/) | :heavy_check_mark:  |
 | [Supabase](https://supabase.io/docs/guides/database) | :heavy_check_mark:  |
