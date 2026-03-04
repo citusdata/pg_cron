@@ -157,6 +157,7 @@ static void bgw_generate_returned_message(StringInfoData *display_msg, ErrorData
 char *CronTableDatabaseName = "postgres";
 static bool CronLogStatement = true;
 static bool CronLogRun = true;
+static bool CronDomDowAndLogic = false;
 
 /* global variables */
 static int CronTaskStartTimeout = 10000; /* maximum connection time */
@@ -326,6 +327,16 @@ _PG_init(void)
 		PGC_POSTMASTER,
 		GUC_SUPERUSER_ONLY,
 		check_timezone, NULL, NULL);
+
+	DefineCustomBoolVariable(
+		"cron.match_dom_and_dow",
+		gettext_noop("Requires a day to match both the day-of-month and day-of-week fields."),
+		NULL,
+		&CronDomDowAndLogic,
+		false,
+		PGC_SIGHUP,
+		GUC_SUPERUSER_ONLY,
+		NULL, NULL, NULL);
 
 	/* set up common data for all our workers */
 	worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
@@ -952,7 +963,7 @@ ShouldRunTask(entry *schedule, TimestampTz currentTime, bool doWild,
 	if (bit_test(schedule->minute, minute) &&
 		bit_test(schedule->hour, hour) &&
 		bit_test(schedule->month, month) &&
-		((schedule->flags & (DOM_STAR | DOW_STAR)) != 0
+		((CronDomDowAndLogic || (schedule->flags & (DOM_STAR | DOW_STAR)) != 0)
 			 ? (thisdom && thisdow)
 			 : (thisdom || thisdow)))
 	{
