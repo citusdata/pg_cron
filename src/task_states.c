@@ -156,6 +156,8 @@ InitializeCronTask(CronTask *task, int64 jobId)
 	task->isActive = true;
 	task->errorMessage = NULL;
 	task->freeErrorMessage = false;
+	task->seg = NULL;
+	task->sharedMemoryQueue = NULL;
 }
 
 

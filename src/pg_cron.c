@@ -152,6 +152,7 @@ static bool jobCanceled(CronTask *task);
 static bool jobStartupTimeout(CronTask *task, TimestampTz currentTime);
 static char* pg_cron_cmdTuples(char *msg);
 static void bgw_generate_returned_message(StringInfoData *display_msg, ErrorData edata);
+static void CleanupCronTask(CronTask *task);
 
 /* global settings */
 char *CronTableDatabaseName = "postgres";
@@ -1481,8 +1482,7 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 
 			if (!registered)
 			{
-				dsm_detach(task->seg);
-				task->seg = NULL;
+				CleanupCronTask(task);
 				task->state = CRON_TASK_ERROR;
 				task->errorMessage = "could not start background process; more "
 									 "details may be available in the server log";
@@ -1498,8 +1498,7 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 			status = WaitForBackgroundWorkerStartup(&task->handle, &pid);
 			if (status != BGWH_STARTED && status != BGWH_STOPPED)
 			{
-				dsm_detach(task->seg);
-				task->seg = NULL;
+				CleanupCronTask(task);
 				task->state = CRON_TASK_ERROR;
 				task->errorMessage = "could not start background process; more "
 									 "details may be available in the server log";
@@ -1697,8 +1696,7 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 			{
 				TerminateBackgroundWorker(&task->handle);
 				WaitForBackgroundWorkerShutdown(&task->handle);
-				dsm_detach(task->seg);
-				task->seg = NULL;
+				CleanupCronTask(task);
 
 				break;
 			}
@@ -1720,9 +1718,7 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 
 				task->state = CRON_TASK_DONE;
 
-				dsm_detach(task->seg);
-
-				task->seg = NULL;
+				CleanupCronTask(task);
 				RunningTaskCount--;
 			}
 
@@ -1796,6 +1792,25 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 			 */
 			task->pendingRunCount = currentPendingRunCount;
 		}
+	}
+}
+
+static void
+CleanupCronTask(CronTask *task)
+{
+	if (task == NULL)
+		return;
+
+	if (task->sharedMemoryQueue != NULL)
+	{
+		shm_mq_detach(task->sharedMemoryQueue);
+		task->sharedMemoryQueue = NULL;
+	}
+
+	if (task->seg != NULL)
+	{
+		dsm_detach(task->seg);
+		task->seg = NULL;
 	}
 }
 
