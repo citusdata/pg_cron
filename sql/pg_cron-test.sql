@@ -138,6 +138,17 @@ SELECT username FROM cron.job where jobid=2;
 SELECT cron.schedule_in_database(job_name:='his vacuum', schedule:='0 11 * * *', command:='VACUUM',database:=current_database(), username:='pgcron_cront');
 SELECT username FROM cron.job where jobid=7;
 
+-- Make sure ownership checks remain case-sensitive for quoted role names
+CREATE USER "CaseOwner";
+CREATE USER caseowner;
+GRANT USAGE ON SCHEMA cron TO "CaseOwner", caseowner;
+
+SELECT cron.schedule_in_database(job_name:='mixed case owner', schedule:='0 11 * * *', command:='VACUUM',database:=current_database(), username:='CaseOwner');
+
+SET SESSION AUTHORIZATION caseowner;
+SELECT cron.unschedule(8);
+RESET SESSION AUTHORIZATION;
+
 -- Override function
 DROP EXTENSION IF EXISTS pg_cron cascade;
 CREATE TABLE test (data text);
@@ -172,5 +183,7 @@ SELECT cron.schedule('bad-last-dom-job1', '0 11 $foo * *', 'VACUUM FULL');
 -- cleaning
 DROP EXTENSION pg_cron;
 drop user pgcron_cront;
+drop user "CaseOwner";
+drop user caseowner;
 drop database pgcron_dbno;
 drop database pgcron_dbyes;
