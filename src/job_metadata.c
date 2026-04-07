@@ -757,13 +757,13 @@ EnsureDeletePermission(Relation cronJobsTable, HeapTuple heapTuple)
 
 	/* check if the current user owns the row */
 	Oid userId = GetUserId();
-	char *userName = GetUserNameFromId(userId, false);
 
 	bool isNull = false;
 	Datum ownerNameDatum = heap_getattr(heapTuple, Anum_cron_job_username,
 										tupleDescriptor, &isNull);
 	char *ownerName = TextDatumGetCString(ownerNameDatum);
-	if (pg_strcasecmp(userName, ownerName) != 0)
+	Oid ownerId = get_role_oid(ownerName, true);
+	if (ownerId != userId)
 	{
 		/* otherwise, allow if the user has DELETE permission */
 		AclResult aclResult = pg_class_aclcheck(CronJobRelationId(), GetUserId(),
