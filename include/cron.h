@@ -28,7 +28,43 @@
 
 /* reorder these #include's at your peril */
 
+#ifndef WIN32_COMPAT_H
+#define WIN32_COMPAT_H
+
+#ifdef _WIN32
+#include <winsock2.h>
+#include <windows.h>
+
+
+
+/* Fix missing POSIX types */
+#ifndef uid_t
+typedef int uid_t;
+typedef int gid_t;
+#endif
+
+#ifndef uint
+typedef unsigned int uint;
+#endif
+
+/* Fix poll mapping */
+#define poll WSAPoll
+
+/* Stub out rlimit to satisfy the compiler without using port.h */
+struct rlimit {
+    uint rlim_cur;
+    uint rlim_max;
+};
+#define RLIMIT_NOFILE 0
+static inline int getrlimit(int resource, struct rlimit *rlp) { return 0; }
+
+#endif /* _WIN32 */
+#endif /* WIN32_COMPAT_H */
+
+
 #include <sys/types.h>
+
+
 #include <sys/param.h>
 
 #include <stdio.h>
