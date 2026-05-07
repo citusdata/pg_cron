@@ -109,8 +109,14 @@
 #include "libpq/pqformat.h"
 #include "utils/builtins.h"
 
-
+#if (PG_VERSION_NUM >= 180000)
+PG_MODULE_MAGIC_EXT(
+	.name = "pg_cron",
+	.version = "1.6.7",
+);
+#else
 PG_MODULE_MAGIC;
+#endif
 
 #ifndef MAXINT8LEN
 #define MAXINT8LEN 20
