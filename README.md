@@ -303,7 +303,7 @@ Ensure [C++ support in Visual Studio](https://learn.microsoft.com/en-us/cpp/buil
 ```cmd
 set "PGROOT=C:\Program Files\PostgreSQL\18"
 cd %TMP%
-git clone https://github.com/citusdata/pg_cron
+git clone https://github.com/citusdata/pg_cron.git
 cd pg_cron
 nmake /F Makefile.win
 nmake /F Makefile.win install
