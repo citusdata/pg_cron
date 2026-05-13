@@ -192,8 +192,13 @@ typedef int time_min;
 
 typedef	struct _entry {
 	struct _entry	*next;
-	uid_t		uid;	
+    #if defined(_WIN32)
+	unsigned int 	uid;
+	unsigned int 	gid;
+	#else
+	uid_t		uid;
 	gid_t		gid;
+	#endif
 	char		**envp;
 	int         secondsInterval;
 	bitstr_t	bit_decl(minute, MINUTE_COUNT);

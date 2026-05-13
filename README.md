@@ -296,6 +296,29 @@ export PATH=/usr/pgsql-18/bin:$PATH
 make && sudo PATH=$PATH make install
 ```
 
+## Windows
+
+Ensure [C++ support in Visual Studio](https://learn.microsoft.com/en-us/cpp/build/building-on-the-command-line?view=msvc-170#download-and-install-the-tools) is installed and run `x64 Native Tools Command Prompt for VS [version]` as administrator. Then use `nmake` to build:
+
+```cmd
+set "PGROOT=C:\Program Files\PostgreSQL\18"
+cd %TMP%
+git clone https://github.com/citusdata/pg_cron
+cd pg_cron
+nmake /F Makefile.win
+nmake /F Makefile.win install
+```
+
+### Installation Notes - Windows
+
+#### Missing Header
+
+If compilation fails with `Cannot open include file: 'postgres.h': No such file or directory`, make sure `PGROOT` is correct.
+
+#### Permissions
+
+If installation fails with `Access is denied`, re-run the installation instructions as an administrator.
+
 # Setting up pg_cron
 
 To start the pg_cron background worker, you need to add pg_cron to `shared_preload_libraries` in postgresql.conf. Note that pg_cron does not run any jobs as a long a server is in [hot standby](https://www.postgresql.org/docs/current/static/hot-standby.html) mode, but it automatically starts when the server is promoted.
