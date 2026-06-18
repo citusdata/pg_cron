@@ -31,6 +31,7 @@
 /* these are always necessary for a bgworker */
 #include "miscadmin.h"
 #include "postmaster/bgworker.h"
+#include "storage/fd.h"
 #include "storage/ipc.h"
 #include "storage/latch.h"
 #include "storage/lwlock.h"
@@ -182,7 +183,10 @@ static bool UseBackgroundWorkers = false;
 
 static char  *cron_timezone = NULL;
 
-static const struct config_enum_entry cron_message_level_options[] = {
+#if PG_VERSION_NUM < 190000
+#define PG_SIG_IGN SIG_IGN
+
+static const struct config_enum_entry server_message_level_options[] = {
 	{"debug5", DEBUG5, false},
 	{"debug4", DEBUG4, false},
 	{"debug3", DEBUG3, false},
@@ -198,6 +202,7 @@ static const struct config_enum_entry cron_message_level_options[] = {
 	{"panic", PANIC, false},
 	{NULL, 0, false}
 };
+#endif
 
 static const char *cron_error_severity(int elevel);
 
@@ -207,7 +212,7 @@ static const char *cron_error_severity(int elevel);
 void
 _PG_init(void)
 {
-	BackgroundWorker worker;
+	BackgroundWorker worker = {0,};
 
 	if (IsBinaryUpgrade)
 	{
@@ -325,7 +330,7 @@ _PG_init(void)
 		NULL,
 		&CronLogMinMessages,
 		WARNING,
-		cron_message_level_options,
+		server_message_level_options,
 		PGC_SIGHUP,
 		GUC_SUPERUSER_ONLY,
 		NULL, NULL, NULL);
@@ -481,17 +486,18 @@ cron_error_severity(int elevel)
 	return elevel_char;
 }
 
+#if PG_VERSION_NUM < 150000
 /*
- * bgw_generate_returned_message -
- *      generates the message to be inserted into the job_run_details table
- *      first part is comming from error_severity (elog.c)
+ * error_severity --- get string representing elevel
+ *
+ * copied from elog.c
  */
-static void
-bgw_generate_returned_message(StringInfoData *display_msg, ErrorData edata)
+static const char *
+error_severity(int elevel)
 {
 	const char *prefix;
 
-	switch (edata.elevel)
+	switch (elevel)
 	{
 		case DEBUG1:
 		case DEBUG2:
@@ -501,7 +507,7 @@ bgw_generate_returned_message(StringInfoData *display_msg, ErrorData edata)
 			prefix = gettext_noop("DEBUG");
 			break;
 		case LOG:
-#if (PG_VERSION_NUM >= 100000)
+#if PG_VERSION_NUM >= 100000
 		case LOG_SERVER_ONLY:
 #endif
 			prefix = gettext_noop("LOG");
@@ -513,6 +519,9 @@ bgw_generate_returned_message(StringInfoData *display_msg, ErrorData edata)
 			prefix = gettext_noop("NOTICE");
 			break;
 		case WARNING:
+#if PG_VERSION_NUM >= 140000
+		case WARNING_CLIENT_ONLY:
+#endif
 			prefix = gettext_noop("WARNING");
 			break;
 		case ERROR:
@@ -528,6 +537,20 @@ bgw_generate_returned_message(StringInfoData *display_msg, ErrorData edata)
 			prefix = "???";
 			break;
 	}
+
+	return prefix;
+}
+#endif
+
+/*
+ * bgw_generate_returned_message -
+ *      generates the message to be inserted into the job_run_details table
+ *      first part is comming from error_severity (elog.c)
+ */
+static void
+bgw_generate_returned_message(StringInfoData *display_msg, ErrorData edata)
+{
+	const char *prefix = error_severity(edata.elevel);
 
 	appendStringInfo(display_msg, "%s: %s", prefix, edata.message);
 	if (edata.detail != NULL)
@@ -553,7 +576,7 @@ PgCronLauncherMain(Datum arg)
 
 	/* Establish signal handlers before unblocking signals. */
 	pqsignal(SIGHUP, SignalHandlerForConfigReload);
-	pqsignal(SIGINT, SIG_IGN);
+	pqsignal(SIGINT, PG_SIG_IGN);
 	pqsignal(SIGTERM, die);
 
 	/* We're now ready to receive signals */
