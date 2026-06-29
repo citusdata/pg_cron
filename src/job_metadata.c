@@ -78,7 +78,7 @@ static int64 ScheduleCronJob(text *scheduleText, text *commandText,
 								text *databaseText, text *usernameText,
 								bool active, text *jobnameText);
 static Oid CronExtensionOwner(void);
-static void EnsureDeletePermission(Relation cronJobsTable, HeapTuple heapTuple);
+static void EnsureDeletePermission(const char *cronJobOwner, Oid userId);
 static void InvalidateJobCache(void);
 static Oid CronJobRelationId(void);
 
@@ -631,43 +631,59 @@ cron_unschedule(PG_FUNCTION_ARGS)
 {
 	int64 jobId = PG_GETARG_INT64(0);
 
-	Oid cronSchemaId = InvalidOid;
-	Oid cronJobIndexId = InvalidOid;
+	StringInfoData querybuf;
+	Oid argTypes[1];
+	Datum argValues[1];
 
-	Relation cronJobsTable = NULL;
-	SysScanDesc scanDescriptor = NULL;
-	ScanKeyData scanKey[1];
-	int scanKeyCount = 1;
-	bool indexOK = true;
-	HeapTuple heapTuple = NULL;
+	Oid savedUserId = InvalidOid;
+	int savedSecurityContext = 0;
 
-	cronSchemaId = get_namespace_oid(CRON_SCHEMA_NAME, false);
-	cronJobIndexId = get_relname_relid(JOB_ID_INDEX_NAME, cronSchemaId);
+	bool isNull = false;
+	char *ownerName;
+	Oid userId = GetUserId();
 
-	cronJobsTable = table_open(CronJobRelationId(), RowExclusiveLock);
+	argTypes[0] = INT8OID;
+	argValues[0] = Int64GetDatum(jobId);
 
-	ScanKeyInit(&scanKey[0], Anum_cron_job_jobid,
-				BTEqualStrategyNumber, F_INT8EQ, Int64GetDatum(jobId));
+	GetUserIdAndSecContext(&savedUserId, &savedSecurityContext);
+	SetUserIdAndSecContext(CronExtensionOwner(), SECURITY_LOCAL_USERID_CHANGE);
 
-	scanDescriptor = systable_beginscan(cronJobsTable,
-										cronJobIndexId, indexOK,
-										NULL, scanKeyCount, scanKey);
+	if (SPI_connect() != SPI_OK_CONNECT)
+		elog(ERROR, "SPI_connect failed");
 
-	heapTuple = systable_getnext(scanDescriptor);
-	if (!HeapTupleIsValid(heapTuple))
-	{
+	initStringInfo(&querybuf);
+	appendStringInfo(&querybuf,
+		"SELECT username FROM %s WHERE jobid = $1",
+		quote_qualified_identifier(CRON_SCHEMA_NAME, JOBS_TABLE_NAME));
+
+	if (SPI_execute_with_args(querybuf.data, 1, argTypes, argValues, NULL,
+							  true, 1) != SPI_OK_SELECT)
+		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
+
+	if (SPI_processed <= 0)
 		ereport(ERROR, (errmsg("could not find valid entry for job "
 							   INT64_FORMAT, jobId)));
-	}
 
-	EnsureDeletePermission(cronJobsTable, heapTuple);
+	ownerName = TextDatumGetCString(SPI_getbinval(SPI_tuptable->vals[0],
+												  SPI_tuptable->tupdesc,
+												  1, &isNull));
+	EnsureDeletePermission(ownerName, userId);
 
-	simple_heap_delete(cronJobsTable, &heapTuple->t_self);
+	resetStringInfo(&querybuf);
+	appendStringInfo(&querybuf,
+		"DELETE FROM %s WHERE jobid = $1",
+		quote_qualified_identifier(CRON_SCHEMA_NAME, JOBS_TABLE_NAME));
 
-	systable_endscan(scanDescriptor);
-	table_close(cronJobsTable, NoLock);
+	if (SPI_execute_with_args(querybuf.data, 1, argTypes, argValues, NULL,
+							  false, 1) != SPI_OK_DELETE)
+		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
 
-	CommandCounterIncrement();
+	pfree(querybuf.data);
+
+	SPI_finish();
+
+	SetUserIdAndSecContext(savedUserId, savedSecurityContext);
+
 	InvalidateJobCache();
 
 	PG_RETURN_BOOL(true);
@@ -682,18 +698,19 @@ cron_unschedule_named(PG_FUNCTION_ARGS)
 {
 	Datum jobNameDatum = PG_GETARG_DATUM(0);
 	char *jobName = NULL;
-	RegProcedure procedure;
 
 	Oid userId = GetUserId();
 	char *userName = GetUserNameFromId(userId, false);
-	Datum userNameDatum = CStringGetTextDatum(userName);
 
-	Relation cronJobsTable = NULL;
-	SysScanDesc scanDescriptor = NULL;
-	ScanKeyData scanKey[2];
-	int scanKeyCount = 2;
-	bool indexOK = false;
-	HeapTuple heapTuple = NULL;
+	StringInfoData querybuf;
+	Oid argTypes[2];
+	Datum argValues[2];
+
+	Oid savedUserId = InvalidOid;
+	int savedSecurityContext = 0;
+
+	bool isNull = false;
+	char *ownerName;
 
 	if (PG_ARGISNULL(0))
 	{
@@ -705,71 +722,75 @@ cron_unschedule_named(PG_FUNCTION_ARGS)
 	 * calls from "CREATE EXTENSION pg_cron VERSION '1.4'".
 	 */
 	if (get_fn_expr_argtype(fcinfo->flinfo, 0) == NAMEOID)
-	{
-		procedure = F_NAMEEQ;
 		jobName = NameStr(*DatumGetName(jobNameDatum));
-	}
 	else
-	{
-		procedure = F_TEXTEQ;
 		jobName = TextDatumGetCString(jobNameDatum);
-	}
 
-	cronJobsTable = table_open(CronJobRelationId(), RowExclusiveLock);
+	argTypes[0] = TEXTOID;
+	argValues[0] = CStringGetTextDatum(jobName);
+	argTypes[1] = TEXTOID;
+	argValues[1] = CStringGetTextDatum(userName);
 
-	ScanKeyInit(&scanKey[0], Anum_cron_job_jobname,
-				BTEqualStrategyNumber, procedure, jobNameDatum);
-	ScanKeyInit(&scanKey[1], Anum_cron_job_username,
-				BTEqualStrategyNumber, F_TEXTEQ, userNameDatum);
+	GetUserIdAndSecContext(&savedUserId, &savedSecurityContext);
+	SetUserIdAndSecContext(CronExtensionOwner(), SECURITY_LOCAL_USERID_CHANGE);
 
-	scanDescriptor = systable_beginscan(cronJobsTable, InvalidOid, indexOK,
-										NULL, scanKeyCount, scanKey);
+	if (SPI_connect() != SPI_OK_CONNECT)
+		elog(ERROR, "SPI_connect failed");
 
-	heapTuple = systable_getnext(scanDescriptor);
-	if (!HeapTupleIsValid(heapTuple))
-	{
+	initStringInfo(&querybuf);
+	appendStringInfo(&querybuf,
+		"SELECT username FROM %s WHERE jobname = $1 AND username = $2",
+		quote_qualified_identifier(CRON_SCHEMA_NAME, JOBS_TABLE_NAME));
+
+	if (SPI_execute_with_args(querybuf.data, 2, argTypes, argValues, NULL,
+							  true, 1) != SPI_OK_SELECT)
+		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
+
+	if (SPI_processed <= 0)
 		ereport(ERROR, (errmsg("could not find valid entry for job '%s'",
 							   jobName)));
-	}
 
-	EnsureDeletePermission(cronJobsTable, heapTuple);
+	ownerName = TextDatumGetCString(SPI_getbinval(SPI_tuptable->vals[0],
+												  SPI_tuptable->tupdesc,
+												  1, &isNull));
+	EnsureDeletePermission(ownerName, userId);
 
-	simple_heap_delete(cronJobsTable, &heapTuple->t_self);
+	resetStringInfo(&querybuf);
+	appendStringInfo(&querybuf,
+		"DELETE FROM %s WHERE jobname = $1 AND username = $2",
+		quote_qualified_identifier(CRON_SCHEMA_NAME, JOBS_TABLE_NAME));
 
-	systable_endscan(scanDescriptor);
-	table_close(cronJobsTable, NoLock);
+	if (SPI_execute_with_args(querybuf.data, 2, argTypes, argValues, NULL,
+							  false, 1) != SPI_OK_DELETE)
+		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
 
-	CommandCounterIncrement();
+	pfree(querybuf.data);
+
+	SPI_finish();
+
+	SetUserIdAndSecContext(savedUserId, savedSecurityContext);
+
 	InvalidateJobCache();
 
 	PG_RETURN_BOOL(true);
 }
 
 
+
 /*
  * EnsureDeletePermission throws an error if the current user does
- * not have permission to delete the given cron.job tuple.
+ * not have permission to delete the given cron.job row.
  */
 static void
-EnsureDeletePermission(Relation cronJobsTable, HeapTuple heapTuple)
+EnsureDeletePermission(const char *cronJobOwner, Oid userId)
 {
-	TupleDesc tupleDescriptor = RelationGetDescr(cronJobsTable);
+	Oid ownerId = get_role_oid(cronJobOwner, true);
 
-	/* check if the current user owns the row */
-	Oid userId = GetUserId();
-
-	bool isNull = false;
-	Datum ownerNameDatum = heap_getattr(heapTuple, Anum_cron_job_username,
-										tupleDescriptor, &isNull);
-	char *ownerName = TextDatumGetCString(ownerNameDatum);
-	Oid ownerId = get_role_oid(ownerName, true);
 	if (ownerId != userId)
 	{
-		/* otherwise, allow if the user has DELETE permission */
-		AclResult aclResult = pg_class_aclcheck(CronJobRelationId(), GetUserId(),
+		AclResult aclResult = pg_class_aclcheck(CronJobRelationId(), userId,
 												ACL_DELETE);
 		if (aclResult != ACLCHECK_OK)
-		{
 			aclcheck_error(aclResult,
 #if (PG_VERSION_NUM < 110000)
 						   ACL_KIND_CLASS,
@@ -777,7 +798,6 @@ EnsureDeletePermission(Relation cronJobsTable, HeapTuple heapTuple)
 						   OBJECT_TABLE,
 #endif
 						   get_rel_name(CronJobRelationId()));
-		}
 	}
 }
 
@@ -860,13 +880,12 @@ LoadCronJobList(void)
 {
 	List *jobList = NIL;
 
-	Relation cronJobTable = NULL;
+	StringInfoData querybuf;
+	uint32 rowIndex;
 
-	SysScanDesc scanDescriptor = NULL;
-	ScanKeyData scanKey[1];
-	int scanKeyCount = 0;
-	HeapTuple heapTuple = NULL;
-	TupleDesc tupleDescriptor = NULL;
+	Oid savedUserId = InvalidOid;
+	int savedSecurityContext = 0;
+
 	MemoryContext originalContext = CurrentMemoryContext;
 
 	SetCurrentStatementStartTimestamp();
@@ -887,35 +906,35 @@ LoadCronJobList(void)
 		return NIL;
 	}
 
-	cronJobTable = table_open(CronJobRelationId(), AccessShareLock);
+	GetUserIdAndSecContext(&savedUserId, &savedSecurityContext);
+	SetUserIdAndSecContext(CronExtensionOwner(), SECURITY_LOCAL_USERID_CHANGE);
 
-	scanDescriptor = systable_beginscan(cronJobTable,
-										InvalidOid, false,
-										NULL, scanKeyCount, scanKey);
+	if (SPI_connect() != SPI_OK_CONNECT)
+		elog(ERROR, "SPI_connect failed");
 
-	tupleDescriptor = RelationGetDescr(cronJobTable);
+	initStringInfo(&querybuf);
+	appendStringInfo(&querybuf, "SELECT * FROM %s",
+					 quote_qualified_identifier(CRON_SCHEMA_NAME, JOBS_TABLE_NAME));
 
-	heapTuple = systable_getnext(scanDescriptor);
-	while (HeapTupleIsValid(heapTuple))
+	if (SPI_execute(querybuf.data, true, 0) != SPI_OK_SELECT)
+		elog(ERROR, "SPI_exec failed: %s", querybuf.data);
+
+	pfree(querybuf.data);
+
+	for (rowIndex = 0; rowIndex < SPI_processed; rowIndex++)
 	{
-		MemoryContext oldContext = NULL;
-		CronJob *job = NULL;
-
-		oldContext = MemoryContextSwitchTo(CronJobContext);
-
-		job = TupleToCronJob(tupleDescriptor, heapTuple);
+		MemoryContext oldContext = MemoryContextSwitchTo(CronJobContext);
+		CronJob *job = TupleToCronJob(SPI_tuptable->tupdesc,
+									  SPI_tuptable->vals[rowIndex]);
 		if (job != NULL)
-		{
 			jobList = lappend(jobList, job);
-		}
 
 		MemoryContextSwitchTo(oldContext);
-
-		heapTuple = systable_getnext(scanDescriptor);
 	}
 
-	systable_endscan(scanDescriptor);
-	table_close(cronJobTable, AccessShareLock);
+	SPI_finish();
+
+	SetUserIdAndSecContext(savedUserId, savedSecurityContext);
 
 	PopActiveSnapshot();
 	CommitTransactionCommand();
