@@ -609,7 +609,7 @@ PgCronLauncherMain(Datum arg)
 		MaxRunningTasks = max_files_per_process;
 	}
 
-	if (getrlimit(RLIMIT_NOFILE, &limit) != 0 &&
+	if (getrlimit(RLIMIT_NOFILE, &limit) == 0 &&
 		limit.rlim_cur < (uint32) MaxRunningTasks)
 	{
 		MaxRunningTasks = limit.rlim_cur;
