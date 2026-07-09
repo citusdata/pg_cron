@@ -19,7 +19,7 @@ endif
 ifeq ($(shell uname -s),SunOS)
     PG_CPPFLAGS += -Wno-sign-compare -D__EXTENSIONS__
 endif
-SHLIB_LINK = $(libpq)
+SHLIB_LINK = $(libpq) -lintl
 EXTRA_CLEAN += $(addprefix src/,*.gcno *.gcda) # clean up after profiling runs
 
 PG_CONFIG ?= pg_config
