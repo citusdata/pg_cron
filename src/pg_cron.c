@@ -12,13 +12,13 @@
  *-------------------------------------------------------------------------
  */
 
-/** move this first so windows gets the winsock early */ 
+/** move this first so windows gets the winsock early */
 #include "cron.h"
 
 #if defined(_WIN32) && (PG_VERSION_NUM < 160000)
-/* 
+/*
 * Skip sys/resource.h for PG15 and lower on Windows
-* this is only an issue with PG < 16 for windows cause of the changes in 16 and above for windows 
+* this is only an issue with PG < 16 for windows cause of the changes in 16 and above for windows
 */
 #else
 #include <sys/resource.h>
@@ -53,6 +53,13 @@
 #include <poll.h>
 #elif defined(HAVE_SYS_POLL_H)
 #include <sys/poll.h>
+#endif
+
+#if defined(_WIN32)
+#include <windows.h>
+#include <winsock2.h>
+
+#define poll WSAPoll
 #endif
 
 #include "sys/time.h"
@@ -572,7 +579,12 @@ void
 PgCronLauncherMain(Datum arg)
 {
 	MemoryContext CronLoopContext = NULL;
+
+	#if defined(_WIN32)
+	uint32 maxIoFiles;
+	#else
 	struct rlimit limit;
+	#endif
 
 	/* Establish signal handlers before unblocking signals. */
 	pqsignal(SIGHUP, SignalHandlerForConfigReload);
@@ -609,11 +621,19 @@ PgCronLauncherMain(Datum arg)
 		MaxRunningTasks = max_files_per_process;
 	}
 
+
+  #if defined(_WIN32)
+    maxIoFiles = (uint32)_getmaxstdio();
+	if (maxIoFiles != 0 && maxIoFiles < (uint32)MaxRunningTasks) {
+		MaxRunningTasks = maxIoFiles;
+	}
+	#else
 	if (getrlimit(RLIMIT_NOFILE, &limit) == 0 &&
 		limit.rlim_cur < (uint32) MaxRunningTasks)
 	{
 		MaxRunningTasks = limit.rlim_cur;
 	}
+	#endif
 
 	if (UseBackgroundWorkers && max_worker_processes - 1 < MaxRunningTasks)
 	{
