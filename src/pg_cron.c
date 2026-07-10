@@ -622,7 +622,7 @@ PgCronLauncherMain(Datum arg)
 	}
 
 
-  #if defined(_WIN32)
+    #if defined(_WIN32)
     maxIoFiles = (uint32)_getmaxstdio();
 	if (maxIoFiles != 0 && maxIoFiles < (uint32)MaxRunningTasks) {
 		MaxRunningTasks = maxIoFiles;
