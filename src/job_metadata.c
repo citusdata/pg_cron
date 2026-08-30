@@ -1081,6 +1081,8 @@ InsertJobRunDetail(int64 runId, int64 *jobId, char *database, char *username, ch
 	Oid argTypes[6];
 	Datum argValues[6];
 	MemoryContext originalContext = CurrentMemoryContext;
+	Oid savedUserId = InvalidOid;
+	int savedSecurityContext = 0;
 
 	SetCurrentStatementStartTimestamp();
 	StartTransactionCommand();
@@ -1095,6 +1097,9 @@ InsertJobRunDetail(int64 runId, int64 *jobId, char *database, char *username, ch
 	}
 
 	initStringInfo(&querybuf);
+
+	GetUserIdAndSecContext(&savedUserId, &savedSecurityContext);
+	SetUserIdAndSecContext(CronExtensionOwner(), SECURITY_LOCAL_USERID_CHANGE);
 
 	/* Open SPI context. */
 	if (SPI_connect() != SPI_OK_CONNECT)
@@ -1136,6 +1141,7 @@ InsertJobRunDetail(int64 runId, int64 *jobId, char *database, char *username, ch
 	pfree(querybuf.data);
 
 	SPI_finish();
+	SetUserIdAndSecContext(savedUserId, savedSecurityContext);
 	PopActiveSnapshot();
 	CommitTransactionCommand();
 	MemoryContextSwitchTo(originalContext);
@@ -1150,6 +1156,8 @@ UpdateJobRunDetail(int64 runId, int32 *job_pid, char *status, char *return_messa
 	Datum argValues[6];
 	int i;
 	MemoryContext originalContext = CurrentMemoryContext;
+	Oid savedUserId = InvalidOid;
+	int savedSecurityContext = 0;
 
 	SetCurrentStatementStartTimestamp();
 	StartTransactionCommand();
@@ -1165,6 +1173,9 @@ UpdateJobRunDetail(int64 runId, int32 *job_pid, char *status, char *return_messa
 
 	initStringInfo(&querybuf);
 	i = 0;
+
+	GetUserIdAndSecContext(&savedUserId, &savedSecurityContext);
+	SetUserIdAndSecContext(CronExtensionOwner(), SECURITY_LOCAL_USERID_CHANGE);
 
 	/* Open SPI context. */
 	if (SPI_connect() != SPI_OK_CONNECT)
@@ -1237,6 +1248,7 @@ UpdateJobRunDetail(int64 runId, int32 *job_pid, char *status, char *return_messa
 	pfree(querybuf.data);
 
 	SPI_finish();
+	SetUserIdAndSecContext(savedUserId, savedSecurityContext);
 	PopActiveSnapshot();
 	CommitTransactionCommand();
 	MemoryContextSwitchTo(originalContext);
@@ -1421,6 +1433,8 @@ MarkPendingRunsAsFailed(void)
 {
 	StringInfoData querybuf;
 	MemoryContext originalContext = CurrentMemoryContext;
+	Oid savedUserId = InvalidOid;
+	int savedSecurityContext = 0;
 
 	SetCurrentStatementStartTimestamp();
 	StartTransactionCommand();
@@ -1435,6 +1449,9 @@ MarkPendingRunsAsFailed(void)
 	}
 
 	initStringInfo(&querybuf);
+
+	GetUserIdAndSecContext(&savedUserId, &savedSecurityContext);
+	SetUserIdAndSecContext(CronExtensionOwner(), SECURITY_LOCAL_USERID_CHANGE);
 
 	/* Open SPI context. */
 	if (SPI_connect() != SPI_OK_CONNECT)
@@ -1452,6 +1469,7 @@ MarkPendingRunsAsFailed(void)
 	pfree(querybuf.data);
 
 	SPI_finish();
+	SetUserIdAndSecContext(savedUserId, savedSecurityContext);
 	PopActiveSnapshot();
 	CommitTransactionCommand();
 	MemoryContextSwitchTo(originalContext);
