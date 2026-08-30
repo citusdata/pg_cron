@@ -972,7 +972,13 @@ TupleToCronJob(TupleDesc tupleDescriptor, HeapTuple heapTuple)
 	}
 
 	job = hash_search(CronJobHash, &jobKey, HASH_ENTER, &isPresent);
-
+	if (isPresent)
+	{
+		ereport(WARNING, (errcode(ERRCODE_DATA_CORRUPTED),
+						  errmsg("skipping duplicate entry for job " INT64_FORMAT,
+								 jobKey)));
+		return NULL;
+	}
 	job->jobId = DatumGetInt64(jobId);
 	job->scheduleText = TextDatumGetCString(schedule);
 	job->command = TextDatumGetCString(command);
