@@ -621,13 +621,14 @@ PgCronLauncherMain(Datum arg)
 		MaxRunningTasks = max_files_per_process;
 	}
 
+
     #if defined(_WIN32)
     maxIoFiles = (uint32)_getmaxstdio();
 	if (maxIoFiles != 0 && maxIoFiles < (uint32)MaxRunningTasks) {
 		MaxRunningTasks = maxIoFiles;
 	}
 	#else
-	if (getrlimit(RLIMIT_NOFILE, &limit) != 0 &&
+	if (getrlimit(RLIMIT_NOFILE, &limit) == 0 &&
 		limit.rlim_cur < (uint32) MaxRunningTasks)
 	{
 		MaxRunningTasks = limit.rlim_cur;
