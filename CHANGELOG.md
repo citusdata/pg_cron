@@ -2,6 +2,7 @@
 
 * Add PostgreSQL 19 support by @CyberDem0n in https://github.com/citusdata/pg_cron/pull/430
 * Add native Windows build support by @codercms in https://github.com/citusdata/pg_cron/pull/431
+* Fix native Windows regression tests to use the pg_cron test database
 * Improve MinGW build support by @robe2 and @rjd15372 in https://github.com/citusdata/pg_cron/pull/428, https://github.com/citusdata/pg_cron/pull/437, and https://github.com/citusdata/pg_cron/pull/439
 * Add the cron.dom_dow_and_logic setting by @vdjakovic in https://github.com/citusdata/pg_cron/pull/421
 * Fix a shutdown hang with synchronous replication by @CyberDem0n in https://github.com/citusdata/pg_cron/pull/414
