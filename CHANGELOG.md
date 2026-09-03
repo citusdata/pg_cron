@@ -1,3 +1,18 @@
+### pg_cron v1.6.8 (September 3, 2026) ###
+
+* Add PostgreSQL 19 support by @CyberDem0n in https://github.com/citusdata/pg_cron/pull/430
+* Add native Windows build support by @codercms in https://github.com/citusdata/pg_cron/pull/431
+* Fix native Windows regression tests to use the pg_cron test database
+* Improve MinGW build support by @robe2 and @rjd15372 in https://github.com/citusdata/pg_cron/pull/428, https://github.com/citusdata/pg_cron/pull/437, and https://github.com/citusdata/pg_cron/pull/439
+* Add the cron.dom_dow_and_logic setting by @vdjakovic in https://github.com/citusdata/pg_cron/pull/421
+* Fix a shutdown hang with synchronous replication by @CyberDem0n in https://github.com/citusdata/pg_cron/pull/414
+* Fix a shared-memory queue handle leak in the launcher process by @dubek in https://github.com/citusdata/pg_cron/pull/420
+* Invalidate the job cache when the relation ID is invalid by @za-arthur in https://github.com/citusdata/pg_cron/commit/f6771508067390433b68ab1ca9cf2269018da42d
+* Fix use of an uninitialized variable by @CyberDem0n in https://github.com/citusdata/pg_cron/pull/413
+* Preserve compatibility with the v1.3 cron.schedule named-job signature by @CyberDem0n in https://github.com/citusdata/pg_cron/pull/411
+* Keep role ownership checks case-sensitive by @ihalatci in https://github.com/citusdata/pg_cron/pull/425
+* Fix getrlimit return value handling by @GalenSha in https://github.com/citusdata/pg_cron/pull/436
+
 ### pg_cron v1.6.7 (September 4, 2025) ###
 
 * Fix compile errors on newer versions of GCC @marcoslot in https://github.com/citusdata/pg_cron/pull/403

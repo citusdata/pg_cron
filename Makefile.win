@@ -4,7 +4,7 @@ EXTENSION = pg_cron
 
 DATA_built = $(EXTENSION)--1.0.sql
 
-REGRESS_OPTS = --temp-config=./pg_cron.conf --temp-instance=./tmp_check
+REGRESS_OPTS = --temp-config=./pg_cron.conf --temp-instance=./tmp_check --dbname=contrib_regression
 REGRESS = pg_cron-test
 
 OBJS = src/entry.obj src/job_metadata.obj src/misc.obj src/pg_cron.obj src/task_states.obj
