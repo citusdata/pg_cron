@@ -19,6 +19,7 @@ endif
 ifeq ($(shell uname -s),SunOS)
     PG_CPPFLAGS += -Wno-sign-compare -D__EXTENSIONS__
 endif
+PG_CPPFLAGS += -DPG_CRON_VERSION=$(shell sed -r -n -e '1s/.* v([^ ]*) .*/\1/p' <CHANGELOG.md)
 SHLIB_LINK = $(libpq)
 EXTRA_CLEAN += $(addprefix src/,*.gcno *.gcda) # clean up after profiling runs
 
