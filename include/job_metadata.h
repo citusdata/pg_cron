@@ -40,6 +40,7 @@ typedef struct CronJob
 	char *userName;
 	bool active;
 	char *jobName;
+	bool logRun;
 } CronJob;
 
 

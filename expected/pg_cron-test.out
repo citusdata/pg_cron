@@ -195,7 +195,7 @@ ERROR:  role "pgcron_useraqwxszedc" does not exist
 SELECT cron.alter_job(job_id:=2,database:='pgcron_dbno',username:='pgcron_cront');
 ERROR:  User pgcron_cront does not have CONNECT privilege on pgcron_dbno
 -- Make sure pgcron_cront can execute alter_job
-GRANT EXECUTE ON FUNCTION cron.alter_job(bigint,text,text,text,text,boolean) TO public;
+GRANT EXECUTE ON FUNCTION cron.alter_job(bigint,text,text,text,text,boolean,boolean) TO public;
 -- Second as non superuser
 SET SESSION AUTHORIZATION pgcron_cront;
 -- Create a job
@@ -350,6 +350,65 @@ SELECT jobid, jobname, schedule, command FROM cron.job ORDER BY jobid;
 SELECT cron.schedule('bad-last-dom-job1', '0 11 $foo * *', 'VACUUM FULL');
 ERROR:  invalid schedule: 0 11 $foo * *
 HINT:  Use cron format (e.g. 5 4 * * *), or interval format '[1-59] seconds'
+-- Testing per-job log_run (v1.7)
+SELECT cron.schedule('log-off-job', '0 11 * * *', 'SELECT 1', false);
+ schedule 
+----------
+        6
+(1 row)
+
+SELECT jobname, log_run FROM cron.job WHERE jobname = 'log-off-job';
+   jobname   | log_run 
+-------------+---------
+ log-off-job | f
+(1 row)
+
+-- 3-arg reschedule of a named job keeps log_run
+SELECT cron.schedule('log-off-job', '0 12 * * *', 'SELECT 1');
+ schedule 
+----------
+        6
+(1 row)
+
+SELECT jobname, schedule, log_run FROM cron.job WHERE jobname = 'log-off-job';
+   jobname   |  schedule  | log_run 
+-------------+------------+---------
+ log-off-job | 0 12 * * * | f
+(1 row)
+
+-- 4-arg reschedule updates log_run
+SELECT cron.schedule('log-off-job', '0 12 * * *', 'SELECT 1', true);
+ schedule 
+----------
+        6
+(1 row)
+
+SELECT jobname, log_run FROM cron.job WHERE jobname = 'log-off-job';
+   jobname   | log_run 
+-------------+---------
+ log-off-job | t
+(1 row)
+
+-- jobs scheduled without log_run default to true
+SELECT jobname, log_run FROM cron.job WHERE jobname = 'last-day-of-month-job1';
+        jobname         | log_run 
+------------------------+---------
+ last-day-of-month-job1 | t
+(1 row)
+
+-- alter_job can disable logging
+SELECT cron.alter_job(job_id := (SELECT jobid FROM cron.job WHERE jobname = 'last-day-of-month-job1'), log_run := false);
+ alter_job 
+-----------
+ 
+(1 row)
+
+SELECT jobname, log_run FROM cron.job WHERE jobname = 'last-day-of-month-job1';
+        jobname         | log_run 
+------------------------+---------
+ last-day-of-month-job1 | f
+(1 row)
+
 -- cleaning
 DROP EXTENSION pg_cron;
 drop user pgcron_cront;

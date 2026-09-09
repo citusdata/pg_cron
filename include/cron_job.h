@@ -28,6 +28,7 @@ typedef struct FormData_cron_job
 	text userName;
 	bool active;
 	text jobName;
+	bool logRun;
 #endif
 } FormData_cron_job;
 
@@ -42,7 +43,7 @@ typedef FormData_cron_job *Form_cron_job;
  *      compiler constants for cron_job
  * ----------------
  */
-#define Natts_cron_job 9
+#define Natts_cron_job 10
 #define Anum_cron_job_jobid 1
 #define Anum_cron_job_schedule 2
 #define Anum_cron_job_command 3
@@ -52,6 +53,7 @@ typedef FormData_cron_job *Form_cron_job;
 #define Anum_cron_job_username 7
 #define Anum_cron_job_active 8
 #define Anum_cron_job_jobname 9
+#define Anum_cron_job_logrun 10
 
 typedef struct FormData_job_run_details
 {
