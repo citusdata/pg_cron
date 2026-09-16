@@ -99,6 +99,10 @@ RETURNS bigint;
 -- create named job, return jobid
 CREATE OR REPLACE FUNCTION cron.schedule(job_name text, schedule text, command text)
 RETURNS bigint
+
+-- create named job and choose whether runs are recorded in cron.job_run_details
+CREATE OR REPLACE FUNCTION cron.schedule(job_name text, schedule text, command text, log_run boolean)
+RETURNS bigint
 ```
 
 #### Examples
@@ -146,6 +150,19 @@ SELECT cron.schedule(
        'process-updates',
        '5 seconds',
        'CALL process_updates()'
+);
+-- returns cron id
+```
+
+##### Create a high-frequency job without run history
+
+```sql
+-- Run every second, but do not write to cron.job_run_details
+SELECT cron.schedule(
+       'run_every_second',
+       '1 second',
+       'SELECT 1',
+       false
 );
 -- returns cron id
 ```
@@ -234,7 +251,8 @@ CREATE OR REPLACE FUNCTION cron.alter_job(
        command text DEFAULT NULL::text, 
        database text DEFAULT NULL::text, 
        username text DEFAULT NULL::text, 
-       active boolean DEFAULT NULL::boolean
+       active boolean DEFAULT NULL::boolean,
+       log_run boolean DEFAULT NULL::boolean
 )
 RETURNS void
 ```
@@ -267,6 +285,14 @@ SELECT cron.alter_job(
 ```sql
 -- deactivate job
 SELECT cron.alter_job(42, active := false);
+-- returns void
+```
+
+##### Disable run logging for a job
+
+```sql
+-- stop writing this job's runs to cron.job_run_details
+SELECT cron.alter_job(42, log_run := false);
 -- returns void
 ```
 
@@ -451,7 +477,7 @@ Especially when you have jobs that run every few seconds, it can be a good idea 
 SELECT  cron.schedule('delete-job-run-details', '0 12 * * *', $$DELETE FROM cron.job_run_details WHERE end_time < now() - interval '7 days'$$);
 ```
 
-If you do not want to use `cron.job_run_details` at all, then you can add `cron.log_run = off` to `postgresql.conf`.
+If you do not want to use `cron.job_run_details` at all, then you can add `cron.log_run = off` to `postgresql.conf`. To keep history for most jobs but skip it for a noisy schedule, pass `log_run := false` to `cron.schedule` or `cron.alter_job`. The global `cron.log_run` setting still disables logging for every job when it is off.
 
 ### Other cron logging settings
 

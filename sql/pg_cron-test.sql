@@ -102,7 +102,7 @@ SELECT cron.schedule_in_database(job_name:='user does not exist', schedule:='0 1
 SELECT cron.alter_job(job_id:=2,database:='pgcron_dbno',username:='pgcron_cront');
 
 -- Make sure pgcron_cront can execute alter_job
-GRANT EXECUTE ON FUNCTION cron.alter_job(bigint,text,text,text,text,boolean) TO public;
+GRANT EXECUTE ON FUNCTION cron.alter_job(bigint,text,text,text,text,boolean,boolean) TO public;
 
 -- Second as non superuser
 SET SESSION AUTHORIZATION pgcron_cront;
@@ -179,6 +179,25 @@ SELECT jobid, jobname, schedule, command FROM cron.job ORDER BY jobid;
 
 -- invalid last of day job
 SELECT cron.schedule('bad-last-dom-job1', '0 11 $foo * *', 'VACUUM FULL');
+
+-- Testing per-job log_run (v1.7)
+SELECT cron.schedule('log-off-job', '0 11 * * *', 'SELECT 1', false);
+SELECT jobname, log_run FROM cron.job WHERE jobname = 'log-off-job';
+
+-- 3-arg reschedule of a named job keeps log_run
+SELECT cron.schedule('log-off-job', '0 12 * * *', 'SELECT 1');
+SELECT jobname, schedule, log_run FROM cron.job WHERE jobname = 'log-off-job';
+
+-- 4-arg reschedule updates log_run
+SELECT cron.schedule('log-off-job', '0 12 * * *', 'SELECT 1', true);
+SELECT jobname, log_run FROM cron.job WHERE jobname = 'log-off-job';
+
+-- jobs scheduled without log_run default to true
+SELECT jobname, log_run FROM cron.job WHERE jobname = 'last-day-of-month-job1';
+
+-- alter_job can disable logging
+SELECT cron.alter_job(job_id := (SELECT jobid FROM cron.job WHERE jobname = 'last-day-of-month-job1'), log_run := false);
+SELECT jobname, log_run FROM cron.job WHERE jobname = 'last-day-of-month-job1';
 
 -- cleaning
 DROP EXTENSION pg_cron;

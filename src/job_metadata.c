@@ -76,7 +76,8 @@ static HTAB * CreateCronJobHash(void);
 
 static int64 ScheduleCronJob(text *scheduleText, text *commandText,
 								text *databaseText, text *usernameText,
-								bool active, text *jobnameText);
+								bool active, text *jobnameText,
+								bool *logRun);
 static Oid CronExtensionOwner(void);
 static void EnsureDeletePermission(Relation cronJobsTable, HeapTuple heapTuple);
 static void InvalidateJobCache(void);
@@ -88,7 +89,8 @@ static bool JobRunDetailsTableExists(void);
 static bool JobTableExists(void);
 
 static void AlterJob(int64 jobId, text *scheduleText, text *commandText,
-						text *databaseText, text *usernameText, bool *active);
+						text *databaseText, text *usernameText, bool *active,
+						bool *logRun);
 
 static Oid GetRoleOidIfCanLogin(char *username);
 static entry * ParseSchedule(char *scheduleText);
@@ -186,7 +188,8 @@ GetCronJob(int64 jobId)
  */
 static int64
 ScheduleCronJob(text *scheduleText, text *commandText, text *databaseText,
-					text *usernameText, bool active, text *jobnameText)
+					text *usernameText, bool active, text *jobnameText,
+					bool *logRun)
 {
 	entry *parsedSchedule = NULL;
 	char *schedule;
@@ -201,8 +204,8 @@ ScheduleCronJob(text *scheduleText, text *commandText, text *databaseText,
 	Datum jobIdDatum = 0;
 
 	StringInfoData querybuf;
-	Oid argTypes[8];
-	Datum argValues[8];
+	Oid argTypes[9];
+	Datum argValues[9];
 	int argCount = 0;
 
 	Oid savedUserId = InvalidOid;
@@ -241,20 +244,36 @@ ScheduleCronJob(text *scheduleText, text *commandText, text *databaseText,
 		appendStringInfo(&querybuf, ", jobname");
 	}
 
+	if (logRun != NULL)
+	{
+		appendStringInfo(&querybuf, ", log_run");
+	}
+
 	appendStringInfo(&querybuf, ") values ($1, $2, $3, $4, $5, $6, $7");
 
 	if (jobnameText != NULL)
 	{
-		appendStringInfo(&querybuf, ", $8) ");
-		appendStringInfo(&querybuf, "on conflict on constraint jobname_username_uniq ");
+		appendStringInfo(&querybuf, ", $8");
+	}
+
+	if (logRun != NULL)
+	{
+		appendStringInfo(&querybuf, ", $%d", jobnameText != NULL ? 9 : 8);
+	}
+
+	appendStringInfo(&querybuf, ")");
+
+	if (jobnameText != NULL)
+	{
+		appendStringInfo(&querybuf, " on conflict on constraint jobname_username_uniq ");
 		appendStringInfo(&querybuf, "do update set ");
 		appendStringInfo(&querybuf, "schedule = EXCLUDED.schedule, ");
 		appendStringInfo(&querybuf, "command = EXCLUDED.command, ");
 		appendStringInfo(&querybuf, "database = EXCLUDED.database");
-	}
-	else
-	{
-		appendStringInfo(&querybuf, ")");
+		if (logRun != NULL)
+		{
+			appendStringInfo(&querybuf, ", log_run = EXCLUDED.log_run");
+		}
 	}
 
 	appendStringInfo(&querybuf, " returning jobid");
@@ -333,6 +352,13 @@ ScheduleCronJob(text *scheduleText, text *commandText, text *databaseText,
 		argTypes[7] = TEXTOID;
 		jobName = text_to_cstring(jobnameText);
 		argValues[7] = CStringGetTextDatum(jobName);
+		argCount++;
+	}
+
+	if (logRun != NULL)
+	{
+		argTypes[argCount] = BOOLOID;
+		argValues[argCount] = BoolGetDatum(*logRun);
 		argCount++;
 	}
 
@@ -421,6 +447,7 @@ cron_alter_job(PG_FUNCTION_ARGS)
 	text *databaseText = NULL;
 	text *usernameText = NULL;
 	bool active;
+	bool logRun = true;
 
 	if (PG_ARGISNULL(0))
 		ereport(ERROR, (errmsg("job_id can not be NULL")));
@@ -442,8 +469,12 @@ cron_alter_job(PG_FUNCTION_ARGS)
 	if (!PG_ARGISNULL(5))
 		active = PG_GETARG_BOOL(5);
 
+	if (PG_NARGS() > 6 && !PG_ARGISNULL(6))
+		logRun = PG_GETARG_BOOL(6);
+
 	AlterJob(jobId, scheduleText, commandText, databaseText, usernameText,
-				PG_ARGISNULL(5) ? NULL : &active);
+				PG_ARGISNULL(5) ? NULL : &active,
+				(PG_NARGS() > 6 && !PG_ARGISNULL(6)) ? &logRun : NULL);
 
 	PG_RETURN_VOID();
 }
@@ -470,7 +501,7 @@ cron_schedule(PG_FUNCTION_ARGS)
 		commandText = PG_GETARG_TEXT_P(1);
 
 	jobId = ScheduleCronJob(scheduleText, commandText, NULL,
-							NULL, true, NULL);
+							NULL, true, NULL, NULL);
 
 	PG_RETURN_INT64(jobId);
 }
@@ -488,6 +519,8 @@ cron_schedule_named(PG_FUNCTION_ARGS)
 	bool active = true;
 	text *jobnameText = NULL;
 	int64 jobId;
+	bool logRunValue = true;
+	bool *logRun = NULL;
 
 	if (PG_ARGISNULL(0))
 		ereport(ERROR, (errmsg("job_name can not be NULL")));
@@ -510,7 +543,15 @@ cron_schedule_named(PG_FUNCTION_ARGS)
 	else
 		commandText = PG_GETARG_TEXT_P(2);
 
-	if (PG_NARGS() > 3)
+	if (PG_NARGS() == 4)
+	{
+		if (!PG_ARGISNULL(3))
+		{
+			logRunValue = PG_GETARG_BOOL(3);
+			logRun = &logRunValue;
+		}
+	}
+	else if (PG_NARGS() > 3)
 	{
 		if (!PG_ARGISNULL(3))
 			databaseText = PG_GETARG_TEXT_P(3);
@@ -523,7 +564,7 @@ cron_schedule_named(PG_FUNCTION_ARGS)
 	}
 
 	jobId = ScheduleCronJob(scheduleText, commandText, databaseText,
-							usernameText, active, jobnameText);
+							usernameText, active, jobnameText, logRun);
 
 	PG_RETURN_INT64(jobId);
 }
@@ -1016,6 +1057,18 @@ TupleToCronJob(TupleDesc tupleDescriptor, HeapTuple heapTuple)
 		}
 	}
 
+	if (tupleDescriptor->natts >= Anum_cron_job_logrun)
+	{
+		Datum logRun = heap_getattr(heapTuple, Anum_cron_job_logrun,
+									 tupleDescriptor, &isNull);
+		Assert(!isNull);
+		job->logRun = DatumGetBool(logRun);
+	}
+	else
+	{
+		job->logRun = true;
+	}
+
 	parsedSchedule = ParseSchedule(job->scheduleText);
 	if (parsedSchedule != NULL)
 	{
@@ -1244,11 +1297,11 @@ UpdateJobRunDetail(int64 runId, int32 *job_pid, char *status, char *return_messa
 
 
 static void
-AlterJob(int64 jobId, text *scheduleText, text *commandText, text *databaseText, text *usernameText, bool *active)
+AlterJob(int64 jobId, text *scheduleText, text *commandText, text *databaseText, text *usernameText, bool *active, bool *logRun)
 {
 	StringInfoData querybuf;
-	Oid argTypes[7];
-	Datum argValues[7];
+	Oid argTypes[8];
+	Datum argValues[8];
 	int i;
 	AclResult aclresult;
 	Oid userId;
@@ -1371,6 +1424,14 @@ AlterJob(int64 jobId, text *scheduleText, text *commandText, text *databaseText,
 		argValues[i] = BoolGetDatum(*active);
 		i++;
 		appendStringInfo(&querybuf, " active = $%d,", i);
+	}
+
+	if (logRun != NULL)
+	{
+		argTypes[i] = BOOLOID;
+		argValues[i] = BoolGetDatum(*logRun);
+		i++;
+		appendStringInfo(&querybuf, " log_run = $%d,", i);
 	}
 
 	/* remove the last comma */
