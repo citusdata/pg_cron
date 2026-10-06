@@ -362,6 +362,18 @@ _PG_init(void)
 		GUC_SUPERUSER_ONLY,
 		NULL, NULL, NULL);
 
+       DefineCustomIntVariable(
+               "cron.task_start_timeout",
+               gettext_noop("Milliseconds task is allowed to wait for start before error"),
+               NULL,
+               &CronTaskStartTimeout,
+               10000,
+               0,
+               20000,
+               PGC_POSTMASTER,
+               GUC_SUPERUSER_ONLY,
+               NULL, NULL, NULL);
+
 	/* set up common data for all our workers */
 	worker.bgw_flags = BGWORKER_SHMEM_ACCESS | BGWORKER_BACKEND_DATABASE_CONNECTION;
 	worker.bgw_start_time = BgWorkerStart_RecoveryFinished;
