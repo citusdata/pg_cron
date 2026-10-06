@@ -350,6 +350,20 @@ SELECT jobid, jobname, schedule, command FROM cron.job ORDER BY jobid;
 SELECT cron.schedule('bad-last-dom-job1', '0 11 $foo * *', 'VACUUM FULL');
 ERROR:  invalid schedule: 0 11 $foo * *
 HINT:  Use cron format (e.g. 5 4 * * *), or interval format '[1-59] seconds'
+-- tests task_start_timeout bounds and default
+alter system set cron.task_start_timeout = 20000;
+alter system set cron.task_start_timeout = 0;
+alter system set cron.task_start_timeout = -1;
+ERROR:  -1 is outside the valid range for parameter "cron.task_start_timeout" (0 .. 20000)
+alter system set cron.task_start_timeout = 20001;
+ERROR:  20001 is outside the valid range for parameter "cron.task_start_timeout" (0 .. 20000)
+alter system reset cron.task_start_timeout;
+show cron.task_start_timeout;
+ cron.task_start_timeout 
+-------------------------
+ 10000
+(1 row)
+
 -- cleaning
 DROP EXTENSION pg_cron;
 drop user pgcron_cront;
