@@ -1426,7 +1426,6 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 
 		case CRON_TASK_BGW_START:
 		{
-
 			BackgroundWorker worker;
 			pid_t pid;
 			shm_toc_estimator e;
@@ -1450,6 +1449,8 @@ ManageCronTask(CronTask *task, TimestampTz currentTime)
 				Assert(CurrentResourceOwner == NULL);
 				CurrentResourceOwner = ResourceOwnerCreate(NULL, "pg_cron_worker");
 			#endif
+
+			task->bgwErrorSeen = false;
 
 			#define QUEUE_SIZE ((Size) 65536)
 
@@ -2029,6 +2030,20 @@ ProcessBgwTaskFeedback(CronTask *task, bool running)
 					initStringInfo(&display_msg);
 					bgw_generate_returned_message(&display_msg, edata);
 
+					/*
+					 * Once the job failed, keep the error and the failed status.
+					 * Later notices (e.g. a warning emitted while aborting the
+					 * transaction) must not turn the run into a success.
+					 */
+					if (task->bgwErrorSeen)
+					{
+						pfree(display_msg.data);
+						break;
+					}
+
+					if (edata.elevel >= ERROR)
+						task->bgwErrorSeen = true;
+
 					if (CronLogRun)
 					{
 
@@ -2059,7 +2074,7 @@ ProcessBgwTaskFeedback(CronTask *task, bool running)
 
 					nonconst_tag = strdup(tag);
 
-					if (CronLogRun)
+					if (CronLogRun && !task->bgwErrorSeen)
 						UpdateJobRunDetail(task->runId, NULL, GetCronStatus(CRON_STATUS_SUCCEEDED), nonconst_tag, NULL, &end_time);
 
 					if (CronLogStatement) {
