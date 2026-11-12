@@ -55,6 +55,7 @@ typedef struct CronTask
 	bool isActive;
 	char *errorMessage;
 	bool freeErrorMessage;
+	bool bgwErrorSeen;
 	shm_mq_handle *sharedMemoryQueue;
 	dsm_segment *seg;
 	BackgroundWorkerHandle handle;
