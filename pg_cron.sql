@@ -1,8 +1,15 @@
 DO $$
+DECLARE
+   cron_database text;
 BEGIN
-   IF pg_catalog.current_database() OPERATOR(pg_catalog.<>) pg_catalog.current_setting('cron.database_name') AND pg_catalog.current_database() OPERATOR(pg_catalog.<>) 'contrib_regression' THEN
+   cron_database := pg_catalog.current_setting('cron.database_name', true);
+   IF cron_database IS NULL THEN
+      RAISE EXCEPTION 'pg_cron can only be loaded via shared_preload_libraries'
+      USING HINT = 'Add pg_cron to the shared_preload_libraries configuration variable in postgresql.conf.';
+   END IF;
+   IF pg_catalog.current_database() OPERATOR(pg_catalog.<>) cron_database AND pg_catalog.current_database() OPERATOR(pg_catalog.<>) 'contrib_regression' THEN
       RAISE EXCEPTION 'can only create extension in database %',
-                      pg_catalog.current_setting('cron.database_name')
+                      cron_database
       USING DETAIL = 'Jobs must be scheduled from the database configured in 'OPERATOR(pg_catalog.||)
                      'cron.database_name, since the pg_cron background worker 'OPERATOR(pg_catalog.||)
                      'reads job descriptions from this database.',
